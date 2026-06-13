@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq'
 import { scanQueue } from '@/jobs/queue'
 import { fetchAndParse } from '@/lib/crawler/cheerio'
+import { cheerioFromPlaywright } from '@/lib/crawler/playwright'
 import { runSeoScan } from '@/lib/scanners/seo'
 import { runGeoScan } from '@/lib/scanners/geo'
 import { runAiVisibilityScan } from '@/lib/scanners/ai-visibility'
@@ -31,7 +32,24 @@ const worker = new Worker<ScanJobData>(
     await supabase.from('scans').update({ status: 'running' }).eq('id', scanId)
 
     try {
-      const { $, headers, cookies } = await fetchAndParse(url)
+      let crawlResult = await fetchAndParse(url)
+
+      if (crawlResult.html.length < 5000) {
+        console.log(`[worker] HTML too small (${crawlResult.html.length}B), retrying with Playwright...`)
+        try {
+          const playwrightResult = await cheerioFromPlaywright(url)
+          crawlResult = {
+            ...crawlResult,
+            $: playwrightResult.$,
+            html: playwrightResult.html,
+            cookies: playwrightResult.cookies,
+          }
+        } catch (playwrightErr) {
+          console.warn('[worker] Playwright fallback failed, using cheerio result:', playwrightErr)
+        }
+      }
+
+      const { $, headers, cookies } = crawlResult
 
       const [seoResult, geoResult, aiResult, securityResult] = await Promise.all([
         modules.includes('seo') ? runSeoScan(url) : Promise.resolve({ score: 0, issues: [], checks: {} }),

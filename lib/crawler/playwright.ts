@@ -1,4 +1,5 @@
 import { chromium } from 'playwright'
+import * as cheerio from 'cheerio'
 
 export interface RenderResult {
   html: string
@@ -57,4 +58,18 @@ export async function renderPage(url: string): Promise<RenderResult> {
   await browser.close()
 
   return { html, cookies, requests, performance: perfTiming }
+}
+
+export async function cheerioFromPlaywright(url: string) {
+  const browser = await chromium.launch({ headless: true })
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (compatible; NexSight/1.0; +https://nexsight.app)',
+  })
+  const page = await context.newPage()
+  await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 })
+  const html = await page.content()
+  const rawCookies = await context.cookies()
+  const cookies = rawCookies.map((c) => `${c.name}=${c.value}`)
+  await browser.close()
+  return { $: cheerio.load(html), html, cookies }
 }
