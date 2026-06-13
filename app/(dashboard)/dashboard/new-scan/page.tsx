@@ -40,6 +40,7 @@ export default function NewScanPage() {
       router.push(`/dashboard/scan/${data.scan_id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
+    } finally {
       setLoading(false)
     }
   }
