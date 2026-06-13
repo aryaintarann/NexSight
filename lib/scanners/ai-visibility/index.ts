@@ -45,7 +45,7 @@ Rate from 0 to 100 how likely you would cite this content when answering a relev
 Respond with ONLY a single integer between 0 and 100.`
 
     const response = await client.chat.completions.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'anthropic/claude-haiku-4-5-20251001',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 10,
       temperature: 0,
