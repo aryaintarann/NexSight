@@ -1,16 +1,20 @@
-'use cache'
-
-import { Suspense } from 'react'
+import { redirect } from 'next/navigation'
+import { connection } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/dashboard/Sidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  await connection()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
   return (
     <div className="flex h-screen bg-[#020617] overflow-hidden">
-      <Suspense fallback={<div className="w-60 shrink-0 bg-[#0f172a] border-r border-slate-800" />}>
-        <Sidebar />
-      </Suspense>
+      <Sidebar userEmail={user.email ?? ''} />
       <main className="flex-1 overflow-y-auto">
-        <Suspense>{children}</Suspense>
+        {children}
       </main>
     </div>
   )

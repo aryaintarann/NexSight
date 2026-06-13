@@ -1,4 +1,3 @@
-import { connection } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { getGrade, getScoreColor } from '@/lib/scoring'
@@ -27,7 +26,6 @@ function ScorePill({ score }: { score: number | null }) {
 }
 
 export default async function DashboardPage() {
-  await connection()
   const supabase = await createClient()
   const { data: scans } = await supabase
     .from('scans')
