@@ -18,9 +18,9 @@ export interface HeaderResult {
   redirectChain: string[]
 }
 
-const REQUEST_TIMEOUT = 15000
+const REQUEST_TIMEOUT = 30000
 const USER_AGENT =
-  'NexSight-Bot/1.0 (+https://github.com/teridox/nexsight)'
+  'Mozilla/5.0 (compatible; NexSight/1.0; +https://nexsight.app)'
 
 export async function fetchAndParse(url: string): Promise<FetchResult> {
   const redirectChain: string[] = []
@@ -28,7 +28,12 @@ export async function fetchAndParse(url: string): Promise<FetchResult> {
   const response = await axios.get(url, {
     timeout: REQUEST_TIMEOUT,
     maxRedirects: 10,
-    headers: { 'User-Agent': USER_AGENT },
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Accept-Encoding': 'gzip, deflate, br',
+    },
     validateStatus: () => true,
     beforeRedirect: (options, { headers }) => {
       if (headers.location) redirectChain.push(headers.location as string)
@@ -56,7 +61,10 @@ export async function fetchHeaders(url: string): Promise<HeaderResult> {
   const opts = {
     timeout: REQUEST_TIMEOUT,
     maxRedirects: 10,
-    headers: { 'User-Agent': USER_AGENT },
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
     validateStatus: () => true,
     beforeRedirect: (_: unknown, { headers }: { headers: Record<string, unknown> }) => {
       if (headers.location) redirectChain.push(headers.location as string)
