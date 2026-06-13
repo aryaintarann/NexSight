@@ -50,8 +50,20 @@ export default async function ScanDetailPage({
     <div className="p-8 max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
+        <div className="flex items-center justify-between mb-2">
           <RealtimeStatus scanId={id} initialScan={typedScan as unknown as Scan} />
+          {typedScan.status === 'done' && (
+            <a
+              href={`/api/report/${id}`}
+              download
+              className="flex items-center gap-2 text-sm text-slate-400 hover:text-white border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download Report
+            </a>
+          )}
         </div>
         <h1 className="text-xl font-bold text-white truncate">{typedScan.url}</h1>
         <p className="text-slate-400 text-sm mt-0.5">
