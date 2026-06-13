@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Scan } from '@/types'
 
@@ -13,6 +14,7 @@ interface Props {
 export function RealtimeStatus({ scanId, initialScan, onUpdate }: Props) {
   const [scan, setScan] = useState<Scan>(initialScan)
   const supabase = createClient()
+  const router = useRouter()
 
   useEffect(() => {
     const channel = supabase
@@ -24,12 +26,15 @@ export function RealtimeStatus({ scanId, initialScan, onUpdate }: Props) {
           const updated = payload.new as Scan
           setScan(updated)
           onUpdate?.(updated)
+          if (updated.status === 'done' || updated.status === 'failed') {
+            router.refresh()
+          }
         }
       )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [scanId])
+  }, [scanId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusConfig = {
     queued:  { label: 'Queued', color: 'text-slate-400', dot: 'bg-slate-400' },
