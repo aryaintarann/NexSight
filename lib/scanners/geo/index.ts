@@ -251,6 +251,142 @@ async function checkAiCrawlerAccess(baseUrl: string): Promise<CheckResult & { is
   }
 }
 
+// ─── G-06: Semantic Clarity ───────────────────────────────────────────────────
+
+function checkSemanticClarity(
+  $: ReturnType<typeof import('cheerio').load>
+): CheckResult & { issues: ScanIssue[] } {
+  const issues: ScanIssue[] = []
+  let score = 100
+
+  const mainText = ($('article, main, [role="main"]').first().text() || $('body').text())
+    .replace(/\s+/g, ' ').trim()
+  const wordCount = mainText.split(' ').filter(Boolean).length
+
+  if (wordCount < 300) {
+    score -= 30
+    issues.push({
+      module: 'geo', severity: 'high', code: 'G-06-TC',
+      title: `Thin content (${wordCount} words)`,
+      description: `Page has only ${wordCount} words — insufficient for AI to understand topic depth.`,
+      recommendation: 'Expand content to at least 300 words covering the topic comprehensively.',
+    })
+  } else if (wordCount < 600) {
+    score -= 10
+    issues.push({
+      module: 'geo', severity: 'medium', code: 'G-06-SC',
+      title: `Shallow content (${wordCount} words)`,
+      recommendation: 'Consider expanding to 600+ words for better topic coverage.',
+    })
+  }
+
+  const paragraphs = $('p').map((_, el) => $(el).text().trim()).get().filter((t) => t.length > 50)
+  const shortParagraphs = paragraphs.filter((p) => p.split(' ').length < 20).length
+  if (paragraphs.length > 3 && shortParagraphs / paragraphs.length > 0.6) {
+    score -= 15
+    issues.push({
+      module: 'geo', severity: 'low', code: 'G-06-SP',
+      title: 'Many short paragraphs reduce topic depth',
+      recommendation: 'Use longer, more descriptive paragraphs that fully explain each concept.',
+    })
+  }
+
+  const hasDefinitions = /\bis\s+(a|an|the)\b/i.test(mainText.slice(0, 500))
+  if (!hasDefinitions && wordCount > 100) {
+    score -= 15
+    issues.push({
+      module: 'geo', severity: 'low', code: 'G-06-ED',
+      title: 'No definitional statements found',
+      recommendation: 'Include clear definitions ("X is a Y that...") to help AI understand entities.',
+    })
+  }
+
+  return {
+    passed: score >= 70,
+    score: Math.max(0, score),
+    details: `words:${wordCount} paragraphs:${paragraphs.length}`,
+    issues,
+  }
+}
+
+// ─── G-07: OpenGraph Meta Tags ────────────────────────────────────────────────
+
+function checkOpenGraph(
+  $: ReturnType<typeof import('cheerio').load>
+): CheckResult & { issues: ScanIssue[] } {
+  const issues: ScanIssue[] = []
+  let score = 100
+
+  const ogTitle = $('meta[property="og:title"]').attr('content')
+  const ogDesc = $('meta[property="og:description"]').attr('content')
+  const ogImage = $('meta[property="og:image"]').attr('content')
+  const ogType = $('meta[property="og:type"]').attr('content')
+  const twitterCard = $('meta[name="twitter:card"]').attr('content')
+
+  if (!ogTitle) {
+    score -= 25
+    issues.push({ module: 'geo', severity: 'medium', code: 'G-07-OT', title: 'Missing og:title', recommendation: 'Add <meta property="og:title" content="...">.' })
+  }
+  if (!ogDesc) {
+    score -= 20
+    issues.push({ module: 'geo', severity: 'medium', code: 'G-07-OD', title: 'Missing og:description', recommendation: 'Add <meta property="og:description" content="...">.' })
+  }
+  if (!ogImage) {
+    score -= 25
+    issues.push({ module: 'geo', severity: 'medium', code: 'G-07-OI', title: 'Missing og:image', recommendation: 'Add og:image for rich previews in social and AI-generated summaries.' })
+  }
+  if (!ogType) {
+    score -= 10
+    issues.push({ module: 'geo', severity: 'low', code: 'G-07-OY', title: 'Missing og:type', recommendation: 'Add <meta property="og:type" content="website"> or "article".' })
+  }
+  if (!twitterCard) {
+    score -= 20
+    issues.push({ module: 'geo', severity: 'low', code: 'G-07-TC', title: 'Missing twitter:card meta', recommendation: 'Add <meta name="twitter:card" content="summary_large_image">.' })
+  }
+
+  return {
+    passed: score >= 70,
+    score: Math.max(0, score),
+    details: `og:title=${!!ogTitle} og:desc=${!!ogDesc} og:image=${!!ogImage} twitter=${!!twitterCard}`,
+    issues,
+  }
+}
+
+// ─── G-08: llms.txt ───────────────────────────────────────────────────────────
+
+async function checkLlmsTxt(baseUrl: string): Promise<CheckResult & { issues: ScanIssue[] }> {
+  const origin = new URL(baseUrl).origin
+  const urls = [`${origin}/llms.txt`, `${origin}/.well-known/llms.txt`]
+
+  for (const url of urls) {
+    try {
+      const res = await axios.get(url, {
+        timeout: 8000,
+        validateStatus: () => true,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NexSight/1.0; +https://nexsight.app)' },
+      })
+      if (res.status === 200 && typeof res.data === 'string' && res.data.length > 10) {
+        return {
+          passed: true, score: 100,
+          details: `llms.txt found at ${url} (${res.data.length} bytes)`,
+          issues: [],
+        }
+      }
+    } catch { /* not found */ }
+  }
+
+  return {
+    passed: false, score: 60,
+    details: 'llms.txt not found',
+    issues: [{
+      module: 'geo', severity: 'low', code: 'G-08-NF',
+      title: 'No llms.txt file found',
+      description: 'llms.txt helps AI crawlers understand your site content and structure.',
+      recommendation: 'Create /llms.txt following the standard at llmstxt.org.',
+    }],
+  }
+}
+
 // ─── Main GEO Scanner ─────────────────────────────────────────────────────────
 
 export async function runGeoScan(
@@ -261,12 +397,15 @@ export async function runGeoScan(
   const allIssues: ScanIssue[] = []
   const checks: Record<string, CheckResult> = {}
 
-  const [eatResult, citabilityResult, faqResult, freshnessResult, crawlerResult] = await Promise.all([
+  const [eatResult, citabilityResult, faqResult, freshnessResult, crawlerResult, semanticResult, ogResult, llmsResult] = await Promise.all([
     Promise.resolve(checkEEAT($, url)),
     Promise.resolve(checkAiCitability($)),
     Promise.resolve(checkFaqSchema($)),
     Promise.resolve(checkContentFreshness($, headers as Record<string, string | string[] | undefined>)),
     checkAiCrawlerAccess(url),
+    Promise.resolve(checkSemanticClarity($)),
+    Promise.resolve(checkOpenGraph($)),
+    checkLlmsTxt(url),
   ])
 
   checks['g01'] = { passed: eatResult.passed, score: eatResult.score, details: eatResult.details }
@@ -274,16 +413,22 @@ export async function runGeoScan(
   checks['g03'] = { passed: faqResult.passed, score: faqResult.score, details: faqResult.details }
   checks['g04'] = { passed: freshnessResult.passed, score: freshnessResult.score, details: freshnessResult.details }
   checks['g05'] = { passed: crawlerResult.passed, score: crawlerResult.score, details: crawlerResult.details }
+  checks['g06'] = { passed: semanticResult.passed, score: semanticResult.score, details: semanticResult.details }
+  checks['g07'] = { passed: ogResult.passed, score: ogResult.score, details: ogResult.details }
+  checks['g08'] = { passed: llmsResult.passed, score: llmsResult.score, details: llmsResult.details }
 
-  allIssues.push(...eatResult.issues, ...citabilityResult.issues, ...faqResult.issues, ...freshnessResult.issues, ...crawlerResult.issues)
+  allIssues.push(...eatResult.issues, ...citabilityResult.issues, ...faqResult.issues, ...freshnessResult.issues, ...crawlerResult.issues, ...semanticResult.issues, ...ogResult.issues, ...llmsResult.issues)
 
-  // Weighted: G-01(25%) G-02(30%) G-03(15%) G-04(15%) G-05(15%)
+  // Weighted: G-01(20%) G-02(20%) G-03(10%) G-04(10%) G-05(15%) G-06(10%) G-07(10%) G-08(5%)
   const score = Math.round(
-    checks['g01'].score * 0.25 +
-    checks['g02'].score * 0.30 +
-    checks['g03'].score * 0.15 +
-    checks['g04'].score * 0.15 +
-    checks['g05'].score * 0.15
+    checks['g01'].score * 0.20 +
+    checks['g02'].score * 0.20 +
+    checks['g03'].score * 0.10 +
+    checks['g04'].score * 0.10 +
+    checks['g05'].score * 0.15 +
+    checks['g06'].score * 0.10 +
+    checks['g07'].score * 0.10 +
+    checks['g08'].score * 0.05
   )
 
   return { score, issues: allIssues, checks }
