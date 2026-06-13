@@ -10,7 +10,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Sidebar />
       </Suspense>
       <main className="flex-1 overflow-y-auto">
-        {children}
+        <Suspense>{children}</Suspense>
       </main>
     </div>
   )
