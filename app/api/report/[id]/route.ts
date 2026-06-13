@@ -38,7 +38,7 @@ export async function GET(
   if (format === 'pdf') {
     const pdfBuffer = await generatePdfReport(typedScan)
     const filename = `nexsight-report-${hostname}-${id.slice(0, 8)}.pdf`
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(pdfBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${filename}"`,

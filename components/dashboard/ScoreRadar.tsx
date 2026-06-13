@@ -33,7 +33,7 @@ export default function ScoreRadar({ seo, geo, ai, security }: Props) {
         <Tooltip
           contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }}
           labelStyle={{ color: '#e2e8f0' }}
-          formatter={(v) => [v ? `${v}/100` : '0/100', 'Score']}
+          formatter={(v) => [`${Number(v)}/100`, 'Score']}
         />
       </RadarChart>
     </ResponsiveContainer>

@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import ScoreGauge from '@/components/dashboard/ScoreGauge'
 import { RealtimeStatus } from '@/components/dashboard/RealtimeStatus'
 import SeverityBadge from '@/components/dashboard/SeverityBadge'
+import ScoreRadar from '@/components/dashboard/ScoreRadar'
+import AiRecommendations from '@/components/dashboard/AiRecommendations'
 import { getGradeLabel, getGrade } from '@/lib/scoring'
 import type { Scan, ScanIssueRow } from '@/types'
 
@@ -53,16 +55,22 @@ export default async function ScanDetailPage({
         <div className="flex items-center justify-between mb-2">
           <RealtimeStatus scanId={id} initialScan={typedScan as unknown as Scan} />
           {typedScan.status === 'done' && (
-            <a
-              href={`/api/report/${id}`}
-              download
-              className="flex items-center gap-2 text-sm text-slate-400 hover:text-white border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Download Report
-            </a>
+            <div className="flex items-center gap-2">
+              <a href={`/api/report/${id}`} download
+                className="flex items-center gap-2 text-sm text-slate-400 hover:text-white border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                HTML
+              </a>
+              <a href={`/api/report/${id}?format=pdf`} download
+                className="flex items-center gap-2 text-sm text-slate-400 hover:text-white border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                PDF
+              </a>
+            </div>
           )}
         </div>
         <h1 className="text-xl font-bold text-white truncate">{typedScan.url}</h1>
@@ -98,6 +106,17 @@ export default async function ScanDetailPage({
             </div>
           </div>
 
+          {/* Score radar chart */}
+          <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6 mb-6">
+            <div className="text-slate-400 text-sm font-medium mb-4">Score Breakdown</div>
+            <ScoreRadar
+              seo={typedScan.seo_score ?? 0}
+              geo={typedScan.geo_score ?? 0}
+              ai={typedScan.ai_score ?? 0}
+              security={typedScan.sec_score ?? 0}
+            />
+          </div>
+
           {/* Module scores */}
           <div className="grid grid-cols-4 gap-4 mb-6">
             {modules.map(({ key, label, score, color }) => (
@@ -117,6 +136,8 @@ export default async function ScanDetailPage({
           </div>
         </>
       )}
+
+      {typedScan.status === 'done' && <AiRecommendations scanId={id} />}
 
       {/* Issues table */}
       {issues.length > 0 && (

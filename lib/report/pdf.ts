@@ -11,7 +11,7 @@ export async function generatePdfReport(scan: Scan & { scan_issues: ScanIssueRow
   })
 
   const page = await browser.newPage()
-  await page.setContent(html, { waitUntil: 'networkidle0' })
+  await page.setContent(html, { waitUntil: 'load' })
 
   const pdf = await page.pdf({
     format: 'A4',
