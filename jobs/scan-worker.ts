@@ -1,4 +1,5 @@
-import { Queue, Worker } from 'bullmq'
+import { Worker } from 'bullmq'
+import { scanQueue } from '@/jobs/queue'
 import { fetchAndParse } from '@/lib/crawler/cheerio'
 import { runSeoScan } from '@/lib/scanners/seo'
 import { runGeoScan } from '@/lib/scanners/geo'
@@ -9,8 +10,6 @@ import { createClient } from '@supabase/supabase-js'
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379'
 const connection = { url: redisUrl, maxRetriesPerRequest: null as null }
-
-export const scanQueue = new Queue('scans', { connection })
 
 interface ScanJobData {
   scanId: string
