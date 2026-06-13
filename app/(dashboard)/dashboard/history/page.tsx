@@ -1,9 +1,11 @@
+import { connection } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { getGrade, getScoreColor } from '@/lib/scoring'
 import type { Scan } from '@/types'
 
 export default async function HistoryPage() {
+  await connection()
   const supabase = await createClient()
   const { data: scans } = await supabase
     .from('scans')

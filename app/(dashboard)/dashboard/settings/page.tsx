@@ -1,6 +1,8 @@
+import { connection } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export default async function SettingsPage() {
+  await connection()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 

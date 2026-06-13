@@ -1,3 +1,4 @@
+import { connection } from 'next/server'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import ScoreGauge from '@/components/dashboard/ScoreGauge'
@@ -11,6 +12,7 @@ export default async function ScanDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
+  await connection()
   const { id } = await params
   const supabase = await createClient()
 
