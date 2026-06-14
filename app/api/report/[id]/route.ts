@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateHtmlReport } from '@/lib/report/html'
 import { generatePdfReport } from '@/lib/report/pdf'
+import { generateMarkdownReport } from '@/lib/report/markdown'
 import type { Scan, ScanIssueRow } from '@/types'
 
 export async function GET(
@@ -12,12 +13,6 @@ export async function GET(
   const format = request.nextUrl.searchParams.get('format') ?? 'html'
 
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   const { data: scan, error } = await supabase
     .from('scans')
     .select('*, scan_issues(*)')
@@ -41,6 +36,17 @@ export async function GET(
     return new NextResponse(pdfBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    })
+  }
+
+  if (format === 'markdown') {
+    const md = generateMarkdownReport(typedScan)
+    const filename = `nexsight-report-${hostname}-${id.slice(0, 8)}.md`
+    return new NextResponse(md, {
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
         'Content-Disposition': `attachment; filename="${filename}"`,
       },
     })

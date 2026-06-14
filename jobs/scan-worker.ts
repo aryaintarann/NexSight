@@ -8,8 +8,6 @@ import { runAiVisibilityScan } from '@/lib/scanners/ai-visibility'
 import { runSecurityScan } from '@/lib/scanners/security'
 import { calculateOverallScore, getGrade } from '@/lib/scoring'
 import { createClient } from '@supabase/supabase-js'
-import { fireWebhooks } from '@/lib/webhooks/send'
-import { checkMonitorAlert } from '@/lib/alerts/check'
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379'
 const connection = { url: redisUrl, maxRetriesPerRequest: null as null }
@@ -18,14 +16,12 @@ interface ScanJobData {
   scanId: string
   url: string
   modules: string[]
-  userId: string
-  monitorId?: string
 }
 
 const worker = new Worker<ScanJobData>(
   'scans',
   async (job) => {
-    const { scanId, url, modules, userId, monitorId } = job.data
+    const { scanId, url, modules } = job.data
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in .env.local')
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey)
@@ -100,18 +96,6 @@ const worker = new Worker<ScanJobData>(
         await supabase.from('scan_issues').insert(allIssues)
       }
 
-      await fireWebhooks(userId, 'scan.done', {
-        scan_id: scanId,
-        url,
-        status: 'done',
-        overall_score: overallScore,
-      }).catch((e) => console.warn('[worker] webhook delivery failed:', e))
-
-      if (monitorId) {
-        await checkMonitorAlert(scanId, monitorId, overallScore)
-          .catch((e: Error) => console.warn('[worker] alert check failed:', e.message))
-      }
-
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       await supabase.from('scans').update({
@@ -119,11 +103,6 @@ const worker = new Worker<ScanJobData>(
         error_message: msg,
         completed_at: new Date().toISOString(),
       }).eq('id', scanId)
-      await fireWebhooks(userId, 'scan.failed', {
-        scan_id: scanId,
-        url,
-        status: 'failed',
-      }).catch(() => {})
       throw err
     }
   },

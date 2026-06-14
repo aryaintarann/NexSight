@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { scanQueue } from '@/jobs/queue'
+import { checkRateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '127.0.0.1'
+  const rl = await checkRateLimit(ip)
 
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded. Try again later.', resetIn: rl.resetIn },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rl.resetIn),
+          'X-RateLimit-Remaining': '0',
+        },
+      }
+    )
   }
 
   const body = await request.json().catch(() => ({}))
@@ -32,9 +42,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 })
   }
 
+  const supabase = await createClient()
   const { data: scan, error } = await supabase
     .from('scans')
-    .insert({ user_id: user.id, url, status: 'queued' })
+    .insert({ url, status: 'queued' })
     .select()
     .single()
 
@@ -42,7 +53,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create scan' }, { status: 500 })
   }
 
-  await scanQueue.add('run-scan', { scanId: scan.id, url, modules, userId: user.id })
+  await scanQueue.add('run-scan', { scanId: scan.id, url, modules })
 
-  return NextResponse.json({ scan_id: scan.id, status: 'queued', url, created_at: scan.created_at }, { status: 201 })
+  return NextResponse.json(
+    { scan_id: scan.id, status: 'queued', url, created_at: scan.created_at },
+    {
+      status: 201,
+      headers: { 'X-RateLimit-Remaining': String(rl.remaining) },
+    }
+  )
 }

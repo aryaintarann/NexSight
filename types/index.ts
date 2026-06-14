@@ -39,7 +39,7 @@ export interface ScanResult {
 
 export interface Scan {
   id: string
-  user_id: string
+  user_id: string | null
   url: string
   status: 'queued' | 'running' | 'done' | 'failed'
   seo_score: number | null
