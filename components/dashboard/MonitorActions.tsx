@@ -9,21 +9,27 @@ export default function MonitorActions({ monitorId, active }: { monitorId: strin
 
   async function toggle() {
     setLoading(true)
-    await fetch(`/api/v1/monitors/${monitorId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active: !active }),
-    })
-    router.refresh()
-    setLoading(false)
+    try {
+      await fetch(`/api/v1/monitors/${monitorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !active }),
+      })
+      router.refresh()
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function remove() {
     if (!confirm('Delete this monitor? All run history will be removed.')) return
     setLoading(true)
-    await fetch(`/api/v1/monitors/${monitorId}`, { method: 'DELETE' })
-    router.refresh()
-    setLoading(false)
+    try {
+      await fetch(`/api/v1/monitors/${monitorId}`, { method: 'DELETE' })
+      router.refresh()
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
