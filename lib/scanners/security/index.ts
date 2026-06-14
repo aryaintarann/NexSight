@@ -280,6 +280,79 @@ function checkOwaspBaseline(headers: Record<string, string | string[] | undefine
   return { passed: score >= 70, score: Math.max(0, score), details: `server:${!!serverHeader} xPoweredBy:${!!xPoweredBy} referrerPolicy:${!!referrerPolicy}`, issues }
 }
 
+// ─── SC-06: CORS Analysis ─────────────────────────────────────────────────────
+
+function checkCors(headers: Record<string, string | string[] | undefined>): CheckResult & { issues: ScanIssue[] } {
+  const getHeader = (name: string) => {
+    const val = headers[name.toLowerCase()]
+    return Array.isArray(val) ? val[0] : val
+  }
+
+  const acao = getHeader('access-control-allow-origin')
+  if (!acao) return { passed: true, score: 100, details: 'no CORS headers', issues: [] }
+
+  if (acao === '*') {
+    const acam = getHeader('access-control-allow-methods') ?? ''
+    const severity = acam.includes('POST') || acam.includes('PUT') || acam.includes('DELETE') ? 'high' : 'medium'
+    return {
+      passed: false, score: 40, details: `ACAO:*`,
+      issues: [{
+        module: 'security', severity,
+        code: 'SC-06-WC',
+        title: 'CORS wildcard allows all origins',
+        description: `Access-Control-Allow-Origin: * — any site can make cross-origin requests.`,
+        recommendation: 'Restrict CORS to specific trusted origins. Use a whitelist instead of wildcard.',
+      }],
+    }
+  }
+
+  return { passed: true, score: 100, details: `ACAO:${acao}`, issues: [] }
+}
+
+// ─── SC-07: CSP Quality ───────────────────────────────────────────────────────
+
+function checkCspQuality(headers: Record<string, string | string[] | undefined>): CheckResult & { issues: ScanIssue[] } {
+  const getHeader = (name: string) => {
+    const val = headers[name.toLowerCase()]
+    return Array.isArray(val) ? val[0] : val
+  }
+
+  const csp = getHeader('content-security-policy')
+  if (!csp) return { passed: false, score: 0, details: 'no CSP', issues: [] }
+
+  const issues: ScanIssue[] = []
+  let score = 100
+
+  if (csp.includes("'unsafe-inline'")) {
+    score -= 30
+    issues.push({
+      module: 'security', severity: 'medium', code: 'SC-07-UI',
+      title: "CSP contains 'unsafe-inline'",
+      description: "unsafe-inline allows inline scripts/styles, weakening XSS protection.",
+      recommendation: "Remove 'unsafe-inline' and use nonces or hashes instead.",
+    })
+  }
+  if (csp.includes("'unsafe-eval'")) {
+    score -= 25
+    issues.push({
+      module: 'security', severity: 'medium', code: 'SC-07-UE',
+      title: "CSP contains 'unsafe-eval'",
+      description: "unsafe-eval allows eval() and similar functions, enabling code injection.",
+      recommendation: "Remove 'unsafe-eval' and refactor code that uses eval().",
+    })
+  }
+  if (!csp.includes('default-src') && !csp.includes('script-src')) {
+    score -= 20
+    issues.push({
+      module: 'security', severity: 'low', code: 'SC-07-ND',
+      title: 'CSP missing default-src or script-src directive',
+      recommendation: "Add 'default-src' as a fallback directive to cover all resource types.",
+    })
+  }
+
+  return { passed: score >= 70, score: Math.max(0, score), details: `cspLength:${csp.length}`, issues }
+}
+
 // ─── Main Security Scanner ────────────────────────────────────────────────────
 
 export async function runSecurityScan(
@@ -299,25 +372,31 @@ export async function runSecurityScan(
   const mixedResult = checkMixedContent($, url)
   const cookieResult = checkCookieSecurity(cookies)
   const owaspResult = checkOwaspBaseline(headers)
+  const corsResult = checkCors(headers)
+  const cspQualityResult = checkCspQuality(headers)
 
   checks['sc01'] = { passed: headerResult.passed, score: headerResult.score, details: headerResult.details }
   checks['sc02'] = { passed: sslResult.passed, score: sslResult.score, details: sslResult.details }
   checks['sc03'] = { passed: mixedResult.passed, score: mixedResult.score, details: mixedResult.details }
   checks['sc04'] = { passed: cookieResult.passed, score: cookieResult.score, details: cookieResult.details }
   checks['sc05'] = { passed: owaspResult.passed, score: owaspResult.score, details: owaspResult.details }
+  checks['sc06'] = { passed: corsResult.passed, score: corsResult.score, details: corsResult.details }
+  checks['sc07'] = { passed: cspQualityResult.passed, score: cspQualityResult.score, details: cspQualityResult.details }
 
   allIssues.push(
     ...headerResult.issues, ...sslResult.issues, ...mixedResult.issues,
-    ...cookieResult.issues, ...owaspResult.issues
+    ...cookieResult.issues, ...owaspResult.issues, ...corsResult.issues, ...cspQualityResult.issues
   )
 
-  // Weighted: SC-01(30%) SC-02(27%) SC-03(20%) SC-04(15%) SC-05(8%)
+  // Weighted: SC-01(22%) SC-02(25%) SC-03(17%) SC-04(13%) SC-05(8%) SC-06(8%) SC-07(7%)
   const score = Math.round(
-    checks['sc01'].score * 0.30 +
-    checks['sc02'].score * 0.27 +
-    checks['sc03'].score * 0.20 +
-    checks['sc04'].score * 0.15 +
-    checks['sc05'].score * 0.08
+    checks['sc01'].score * 0.22 +
+    checks['sc02'].score * 0.25 +
+    checks['sc03'].score * 0.17 +
+    checks['sc04'].score * 0.13 +
+    checks['sc05'].score * 0.08 +
+    checks['sc06'].score * 0.08 +
+    checks['sc07'].score * 0.07
   )
 
   return { score, issues: allIssues, checks }

@@ -1,6 +1,4 @@
 import { Worker } from 'bullmq'
-import { scanQueue } from '@/jobs/queue'
-import { fetchAndParse } from '@/lib/crawler/cheerio'
 import { cheerioFromPlaywright } from '@/lib/crawler/playwright'
 import { runSeoScan } from '@/lib/scanners/seo'
 import { runGeoScan } from '@/lib/scanners/geo'
@@ -10,7 +8,6 @@ import { calculateOverallScore, getGrade } from '@/lib/scoring'
 import { createClient } from '@supabase/supabase-js'
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379'
-const connection = { url: redisUrl, maxRetriesPerRequest: null as null }
 
 interface ScanJobData {
   scanId: string
@@ -27,34 +24,28 @@ const worker = new Worker<ScanJobData>(
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey)
 
     const startTime = Date.now()
-
     await supabase.from('scans').update({ status: 'running' }).eq('id', scanId)
 
     try {
-      let crawlResult = await fetchAndParse(url)
-
-      if (crawlResult.html.length < 5000) {
-        console.log(`[worker] HTML too small (${crawlResult.html.length}B), retrying with Playwright...`)
-        try {
-          const playwrightResult = await cheerioFromPlaywright(url)
-          crawlResult = {
-            ...crawlResult,
-            $: playwrightResult.$,
-            html: playwrightResult.html,
-            cookies: playwrightResult.cookies,
-          }
-        } catch (playwrightErr) {
-          console.warn('[worker] Playwright fallback failed, using cheerio result:', playwrightErr)
-        }
-      }
-
+      // Always use Playwright — accurately renders JS-heavy SPAs and captures
+      // real response headers, cookies with flags, and fully-hydrated HTML.
+      const crawlResult = await cheerioFromPlaywright(url)
       const { $, headers, cookies } = crawlResult
+      const typedHeaders = headers as Record<string, string | string[] | undefined>
 
       const [seoResult, geoResult, aiResult, securityResult] = await Promise.all([
-        modules.includes('seo') ? runSeoScan(url) : Promise.resolve({ score: 0, issues: [], checks: {} }),
-        modules.includes('geo') ? runGeoScan(url, $, headers as Record<string, string | string[] | undefined>) : Promise.resolve({ score: 0, issues: [], checks: {} }),
-        modules.includes('ai') ? runAiVisibilityScan(url, $) : Promise.resolve({ score: 0, issues: [], checks: {} }),
-        modules.includes('security') ? runSecurityScan(url, $, headers as Record<string, string | string[] | undefined>, cookies) : Promise.resolve({ score: 0, issues: [], checks: {} }),
+        modules.includes('seo')
+          ? runSeoScan(url, $, typedHeaders, cookies)
+          : Promise.resolve({ score: 0, issues: [], checks: {} }),
+        modules.includes('geo')
+          ? runGeoScan(url, $, typedHeaders)
+          : Promise.resolve({ score: 0, issues: [], checks: {} }),
+        modules.includes('ai')
+          ? runAiVisibilityScan(url, $)
+          : Promise.resolve({ score: 0, issues: [], checks: {} }),
+        modules.includes('security')
+          ? runSecurityScan(url, $, typedHeaders, cookies)
+          : Promise.resolve({ score: 0, issues: [], checks: {} }),
       ])
 
       const overallScore = calculateOverallScore(seoResult.score, geoResult.score, aiResult.score, securityResult.score)
@@ -84,7 +75,6 @@ const worker = new Worker<ScanJobData>(
         completed_at: new Date().toISOString(),
       }).eq('id', scanId)
 
-      // Save issues to scan_issues table
       const allIssues = [
         ...seoResult.issues,
         ...geoResult.issues,
@@ -106,7 +96,7 @@ const worker = new Worker<ScanJobData>(
       throw err
     }
   },
-  { connection: { url: redisUrl, maxRetriesPerRequest: null as null }, concurrency: 5 }
+  { connection: { url: redisUrl, maxRetriesPerRequest: null as null }, concurrency: 3 }
 )
 
 worker.on('completed', (job) => console.log(`Scan ${job.data.scanId} completed`))

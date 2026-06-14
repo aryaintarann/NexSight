@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { fetchAndParse, fetchHeaders } from '@/lib/crawler/cheerio'
+import { fetchHeaders } from '@/lib/crawler/cheerio'
 import type { SeoResult, ScanIssue, CheckResult } from '@/types'
 
 // ─── S-01: Meta Tags ──────────────────────────────────────────────────────────
@@ -53,15 +53,9 @@ function checkMetaTags(
 // ─── S-02 / S-06: PageSpeed Insights (Core Web Vitals + Page Speed) ──────────
 
 interface PageSpeedResult {
-  lcp: number
-  cls: number
-  inp: number
-  fcp: number
-  ttfb: number
-  renderBlockingCount: number
-  totalByteWeight: number
-  score: number
-  issues: ScanIssue[]
+  lcp: number; cls: number; inp: number; fcp: number; ttfb: number
+  renderBlockingCount: number; totalByteWeight: number
+  score: number; issues: ScanIssue[]
   checks: { s02: CheckResult; s06: CheckResult }
 }
 
@@ -83,7 +77,6 @@ async function checkPageSpeed(url: string): Promise<PageSpeedResult> {
     const totalByteWeight = audits['total-byte-weight']?.numericValue ?? 0
     const perfScore = Math.round((categories.performance?.score ?? 0) * 100)
 
-    // S-02 Core Web Vitals checks
     if (lcp > 4000) { issues.push({ module: 'seo', severity: 'critical', code: 'S-02-LCP', title: 'LCP is poor', description: `LCP: ${(lcp / 1000).toFixed(2)}s (target < 2.5s)`, recommendation: 'Optimize images, server response time, and render-blocking resources.' }) }
     else if (lcp > 2500) { issues.push({ module: 'seo', severity: 'high', code: 'S-02-LCP', title: 'LCP needs improvement', description: `LCP: ${(lcp / 1000).toFixed(2)}s (target < 2.5s)`, recommendation: 'Optimize largest content element loading.' }) }
 
@@ -93,15 +86,12 @@ async function checkPageSpeed(url: string): Promise<PageSpeedResult> {
     if (inp > 500) { issues.push({ module: 'seo', severity: 'critical', code: 'S-02-INP', title: 'INP is poor', description: `INP: ${inp}ms (target < 200ms)`, recommendation: 'Minimize JavaScript execution time and long tasks.' }) }
     else if (inp > 200) { issues.push({ module: 'seo', severity: 'medium', code: 'S-02-INP', title: 'INP needs improvement', description: `INP: ${inp}ms (target < 200ms)`, recommendation: 'Optimize event handlers and reduce main thread blocking.' }) }
 
-    // S-06 Page Speed checks
     if (ttfb > 600) { issues.push({ module: 'seo', severity: 'high', code: 'S-06-TTFB', title: 'Slow server response time (TTFB)', description: `TTFB: ${ttfb}ms (target < 600ms)`, recommendation: 'Use CDN, optimize server-side rendering, or upgrade hosting.' }) }
     if (renderBlockingCount > 0) { issues.push({ module: 'seo', severity: 'medium', code: 'S-06-RBR', title: `${renderBlockingCount} render-blocking resource(s)`, recommendation: 'Defer non-critical CSS/JS or inline critical styles.' }) }
     if (totalByteWeight > 5_000_000) { issues.push({ module: 'seo', severity: 'high', code: 'S-06-SIZE', title: 'Page size too large', description: `Total: ${(totalByteWeight / 1024 / 1024).toFixed(1)}MB`, recommendation: 'Compress images, minify assets, enable gzip/brotli.' }) }
 
     return {
-      lcp, cls, inp, fcp, ttfb, renderBlockingCount, totalByteWeight,
-      score: perfScore,
-      issues,
+      lcp, cls, inp, fcp, ttfb, renderBlockingCount, totalByteWeight, score: perfScore, issues,
       checks: {
         s02: { passed: lcp < 2500 && cls < 0.1 && inp < 200, score: perfScore, details: `LCP:${(lcp / 1000).toFixed(2)}s CLS:${cls.toFixed(3)} INP:${inp}ms` },
         s06: { passed: ttfb < 600 && renderBlockingCount === 0, score: Math.max(0, 100 - renderBlockingCount * 10 - (ttfb > 600 ? 20 : 0)), details: `TTFB:${ttfb}ms render-blocking:${renderBlockingCount}` },
@@ -109,8 +99,7 @@ async function checkPageSpeed(url: string): Promise<PageSpeedResult> {
     }
   } catch {
     return {
-      lcp: 0, cls: 0, inp: 0, fcp: 0, ttfb: 0, renderBlockingCount: 0, totalByteWeight: 0,
-      score: 50,
+      lcp: 0, cls: 0, inp: 0, fcp: 0, ttfb: 0, renderBlockingCount: 0, totalByteWeight: 0, score: 50,
       issues: [{ module: 'seo', severity: 'info', code: 'S-02-ERR', title: 'PageSpeed API unavailable', description: 'Could not fetch Core Web Vitals data.' }],
       checks: {
         s02: { passed: false, score: 50, details: 'PageSpeed API unavailable' },
@@ -120,7 +109,7 @@ async function checkPageSpeed(url: string): Promise<PageSpeedResult> {
   }
 }
 
-// ─── S-03: Broken Links ───────────────────────────────────────────────────────
+// ─── S-03: Broken Links (checks up to 100 internal links) ────────────────────
 
 async function checkBrokenLinks(
   $: ReturnType<typeof import('cheerio').load>,
@@ -139,8 +128,7 @@ async function checkBrokenLinks(
     } catch { /* invalid URL */ }
   })
 
-  // Check up to 20 unique links to avoid long scan times
-  const unique = [...new Set(hrefs)].slice(0, 20)
+  const unique = [...new Set(hrefs)].slice(0, 100)
   let brokenCount = 0
 
   await Promise.allSettled(
@@ -165,17 +153,15 @@ async function checkBrokenLinks(
             affected_url: link,
           })
         }
-      } catch { /* network error */ }
+      } catch { /* network error — skip */ }
     })
   )
 
-  const score = Math.max(0, 100 - brokenCount * 20)
+  const score = Math.max(0, 100 - brokenCount * 15)
   return { passed: brokenCount === 0, score, details: `checked:${unique.length} broken:${brokenCount}`, issues }
 }
 
 // ─── S-04: Schema Markup ──────────────────────────────────────────────────────
-
-const KNOWN_SCHEMA_TYPES = ['Article', 'Product', 'FAQPage', 'BreadcrumbList', 'LocalBusiness', 'WebPage', 'Organization', 'Person', 'Event', 'Recipe']
 
 function checkSchemaMarkup(
   $: ReturnType<typeof import('cheerio').load>
@@ -213,9 +199,8 @@ async function checkSitemapAndRobots(baseUrl: string): Promise<CheckResult & { i
   const issues: ScanIssue[] = []
   const origin = new URL(baseUrl).origin
   let score = 100
-
-  // Check robots.txt
   let sitemapUrl = `${origin}/sitemap.xml`
+
   try {
     const { data: robotsTxt } = await axios.get(`${origin}/robots.txt`, { timeout: 10000, validateStatus: () => true })
     if (typeof robotsTxt !== 'string' || robotsTxt.length < 5) {
@@ -230,7 +215,6 @@ async function checkSitemapAndRobots(baseUrl: string): Promise<CheckResult & { i
     issues.push({ module: 'seo', severity: 'medium', code: 'S-05-RT2', title: 'Cannot fetch robots.txt', recommendation: 'Ensure robots.txt is accessible at your domain root.' })
   }
 
-  // Check sitemap
   try {
     const { data: sitemapData, status } = await axios.get(sitemapUrl, { timeout: 10000, validateStatus: () => true })
     if (status !== 200 || typeof sitemapData !== 'string') {
@@ -254,17 +238,132 @@ async function checkSitemapAndRobots(baseUrl: string): Promise<CheckResult & { i
   return { passed: score >= 70, score: Math.max(0, score), details: `sitemapUrl:${sitemapUrl}`, issues }
 }
 
+// ─── S-07: Viewport Meta ──────────────────────────────────────────────────────
+
+function checkViewport(
+  $: ReturnType<typeof import('cheerio').load>
+): CheckResult & { issues: ScanIssue[] } {
+  const viewport = $('meta[name="viewport"]').attr('content')?.trim()
+
+  if (!viewport) {
+    return {
+      passed: false, score: 0, details: 'no viewport meta',
+      issues: [{ module: 'seo', severity: 'high', code: 'S-07-VP', title: 'Missing viewport meta tag', recommendation: 'Add <meta name="viewport" content="width=device-width, initial-scale=1"> for mobile compatibility.' }],
+    }
+  }
+  if (!viewport.includes('width=device-width')) {
+    return {
+      passed: false, score: 50, details: `viewport:${viewport}`,
+      issues: [{ module: 'seo', severity: 'medium', code: 'S-07-VW', title: 'Viewport missing width=device-width', description: `Current: "${viewport}"`, recommendation: 'Set viewport to: width=device-width, initial-scale=1' }],
+    }
+  }
+  return { passed: true, score: 100, details: `viewport:${viewport}`, issues: [] }
+}
+
+// ─── S-08: Image Alt Text ─────────────────────────────────────────────────────
+
+function checkImageAlt(
+  $: ReturnType<typeof import('cheerio').load>
+): CheckResult & { issues: ScanIssue[] } {
+  const images = $('img')
+  const total = images.length
+  if (total === 0) return { passed: true, score: 100, details: 'no images found', issues: [] }
+
+  let missingAlt = 0
+  let emptyAlt = 0
+  images.each((_, el) => {
+    const alt = $(el).attr('alt')
+    if (alt === undefined) missingAlt++
+    else if (alt.trim() === '' && !$(el).attr('role')) emptyAlt++
+  })
+
+  const issues: ScanIssue[] = []
+  const badCount = missingAlt + emptyAlt
+  const score = Math.max(0, 100 - Math.round((badCount / total) * 100))
+
+  if (missingAlt > 0) {
+    issues.push({
+      module: 'seo', severity: 'medium', code: 'S-08-MA',
+      title: `${missingAlt} image(s) missing alt attribute`,
+      description: `${missingAlt} of ${total} images have no alt attribute.`,
+      recommendation: 'Add descriptive alt text to all content images for SEO and accessibility.',
+    })
+  }
+  if (emptyAlt > 0) {
+    issues.push({
+      module: 'seo', severity: 'low', code: 'S-08-EA',
+      title: `${emptyAlt} image(s) with empty alt text`,
+      description: `Use empty alt="" only for decorative images.`,
+      recommendation: 'Add descriptive alt text for content images; keep alt="" for decorative ones.',
+    })
+  }
+  return { passed: missingAlt === 0, score, details: `total:${total} missingAlt:${missingAlt} emptyAlt:${emptyAlt}`, issues }
+}
+
+// ─── S-09: HTML Lang & Hreflang ──────────────────────────────────────────────
+
+function checkHreflangAndLang(
+  $: ReturnType<typeof import('cheerio').load>
+): CheckResult & { issues: ScanIssue[] } {
+  const issues: ScanIssue[] = []
+  let score = 100
+
+  const htmlLang = $('html').attr('lang')?.trim()
+  if (!htmlLang) {
+    score -= 30
+    issues.push({
+      module: 'seo', severity: 'medium', code: 'S-09-HL',
+      title: 'Missing lang attribute on <html> tag',
+      recommendation: 'Add lang="en" (or appropriate language code) to your <html> element.',
+    })
+  }
+
+  const hreflangs = $('link[rel="alternate"][hreflang]')
+  if (hreflangs.length > 0) {
+    const hasXDefault = hreflangs.filter('[hreflang="x-default"]').length > 0
+    if (!hasXDefault) {
+      score -= 10
+      issues.push({
+        module: 'seo', severity: 'low', code: 'S-09-HX',
+        title: 'Hreflang missing x-default',
+        recommendation: 'Add <link rel="alternate" hreflang="x-default"> for users not matched by other hreflang tags.',
+      })
+    }
+  }
+
+  return { passed: score >= 70, score: Math.max(0, score), details: `lang:${htmlLang ?? 'none'} hreflang:${hreflangs.length}`, issues }
+}
+
 // ─── Main SEO Scanner ─────────────────────────────────────────────────────────
 
-export async function runSeoScan(url: string): Promise<SeoResult> {
+export async function runSeoScan(
+  url: string,
+  $: ReturnType<typeof import('cheerio').load>,
+  headers: Record<string, string | string[] | undefined>,
+  _cookies: string[]
+): Promise<SeoResult> {
   const allIssues: ScanIssue[] = []
   const checks: Record<string, CheckResult> = {}
-
-  const { $, headers } = await fetchAndParse(url)
 
   const metaCheck = checkMetaTags($, url)
   checks['s01'] = { passed: metaCheck.passed, score: metaCheck.score, details: metaCheck.details }
   allIssues.push(...metaCheck.issues)
+
+  const viewportCheck = checkViewport($)
+  checks['s07'] = { passed: viewportCheck.passed, score: viewportCheck.score, details: viewportCheck.details }
+  allIssues.push(...viewportCheck.issues)
+
+  const altCheck = checkImageAlt($)
+  checks['s08'] = { passed: altCheck.passed, score: altCheck.score, details: altCheck.details }
+  allIssues.push(...altCheck.issues)
+
+  const langCheck = checkHreflangAndLang($)
+  checks['s09'] = { passed: langCheck.passed, score: langCheck.score, details: langCheck.details }
+  allIssues.push(...langCheck.issues)
+
+  const schemaCheck = checkSchemaMarkup($)
+  checks['s04'] = { passed: schemaCheck.passed, score: schemaCheck.score, details: schemaCheck.details }
+  allIssues.push(...schemaCheck.issues)
 
   const [pageSpeedResult, brokenLinkResult, sitemapResult] = await Promise.all([
     checkPageSpeed(url),
@@ -274,20 +373,22 @@ export async function runSeoScan(url: string): Promise<SeoResult> {
 
   checks['s02'] = pageSpeedResult.checks.s02
   checks['s03'] = { passed: brokenLinkResult.passed, score: brokenLinkResult.score, details: brokenLinkResult.details }
-  checks['s04'] = (() => { const r = checkSchemaMarkup($); allIssues.push(...r.issues); return { passed: r.passed, score: r.score, details: r.details } })()
   checks['s05'] = { passed: sitemapResult.passed, score: sitemapResult.score, details: sitemapResult.details }
   checks['s06'] = pageSpeedResult.checks.s06
 
   allIssues.push(...pageSpeedResult.issues, ...brokenLinkResult.issues, ...sitemapResult.issues)
 
-  // Weighted score: S-01(25%) S-02(20%) S-03(15%) S-04(15%) S-05(15%) S-06(10%)
+  // Weighted: S-01(20%) S-02(18%) S-03(10%) S-04(10%) S-05(10%) S-06(10%) S-07(8%) S-08(8%) S-09(6%)
   const score = Math.round(
-    checks['s01'].score * 0.25 +
-    checks['s02'].score * 0.20 +
-    checks['s03'].score * 0.15 +
-    checks['s04'].score * 0.15 +
-    checks['s05'].score * 0.15 +
-    checks['s06'].score * 0.10
+    checks['s01'].score * 0.20 +
+    checks['s02'].score * 0.18 +
+    checks['s03'].score * 0.10 +
+    checks['s04'].score * 0.10 +
+    checks['s05'].score * 0.10 +
+    checks['s06'].score * 0.10 +
+    checks['s07'].score * 0.08 +
+    checks['s08'].score * 0.08 +
+    checks['s09'].score * 0.06
   )
 
   return { score, issues: allIssues, checks }

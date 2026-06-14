@@ -1,91 +1,110 @@
-import OpenAI from 'openai'
 import type { AiVisibilityResult, ScanIssue, CheckResult } from '@/types'
 
-// ─── A-01: AI Citation Probability + A-04: Multi-Platform Scores ──────────────
+// ─── A-01: Content Intelligence Score (deterministic) ────────────────────────
+// Replaces subjective LLM-based rating with measurable, reproducible signals
+// that correlate with AI citation likelihood across ChatGPT/Gemini/Perplexity.
 
-async function checkAiCitationProbability(
-  title: string,
-  contentSample: string
-): Promise<CheckResult & { issues: ScanIssue[] }> {
+function checkContentIntelligence(
+  $: ReturnType<typeof import('cheerio').load>
+): CheckResult & { issues: ScanIssue[] } {
   const issues: ScanIssue[] = []
+  let score = 0
 
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) {
-    return {
-      passed: false, score: 50,
-      details: 'OpenRouter API key not configured',
-      issues: [{ module: 'ai', severity: 'info', code: 'A-01-NK', title: 'AI citation check skipped (no OPENROUTER_API_KEY)' }],
-    }
+  const bodyText = ($('article, main, [role="main"]').first().text() || $('body').text())
+    .replace(/\s+/g, ' ').trim()
+  const words = bodyText.split(' ').filter(Boolean)
+  const sentences = bodyText.split(/[.!?]+/).filter((s) => s.trim().split(' ').length > 3)
+
+  // ── Word count: 0-25 pts ────────────────────────────────────────────────────
+  if (words.length >= 800) score += 25
+  else if (words.length >= 500) score += 20
+  else if (words.length >= 300) score += 13
+  else if (words.length >= 150) score += 6
+  else {
+    score += 2
+    issues.push({
+      module: 'ai', severity: 'high', code: 'A-01-WC',
+      title: 'Thin content — insufficient word count',
+      description: `${words.length} words detected. AI systems strongly prefer 500+ words.`,
+      recommendation: 'Expand content to at least 500 words for strong AI search visibility.',
+    })
   }
 
-  try {
-    const client = new OpenAI({
-      baseURL: 'https://openrouter.ai/api/v1',
-      apiKey,
-      defaultHeaders: {
-        'HTTP-Referer': 'https://github.com/teridox/nexsight',
-        'X-Title': 'NexSight Scanner',
-      },
+  // ── Direct answer in opening: 0-20 pts ─────────────────────────────────────
+  const firstPara = $('article p, main p, [role="main"] p').first().text().trim()
+    || sentences.slice(0, 2).join('. ')
+  const hasDirectAnswer = /\b(is\s|are\s|refers to|means |defined as|consists of|includes |describes )/i.test(firstPara)
+  const openingIsSubstantial = firstPara.split(' ').length >= 20
+
+  if (hasDirectAnswer && openingIsSubstantial) score += 20
+  else if (hasDirectAnswer) score += 12
+  else if (openingIsSubstantial) score += 8
+  else {
+    score += 3
+    issues.push({
+      module: 'ai', severity: 'medium', code: 'A-01-DA',
+      title: 'Opening paragraph lacks a direct answer',
+      recommendation: 'Start content with a clear, direct definition or answer. AI systems extract the first substantive statement when generating responses.',
     })
+  }
 
-    const prompt = `You are evaluating web content for AI search citation likelihood.
-
-Page title: "${title}"
-
-Content excerpt (first 500 words):
-${contentSample}
-
-Rate how likely each AI system would cite this content (0-100 each):
-1. ChatGPT (OpenAI) — prefers factual, structured, authoritative content
-2. Gemini (Google) — prefers well-cited, comprehensive, E-E-A-T signals
-3. Perplexity — prefers current, sourced, dense-information content
-4. Claude (Anthropic) — prefers clear, well-reasoned, honest content
-
-Respond with ONLY 4 integers separated by commas, in order: ChatGPT,Gemini,Perplexity,Claude
-Example: 72,68,75,80`
-
-    const response = await client.chat.completions.create({
-      model: 'anthropic/claude-haiku-4-5-20251001',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 20,
-      temperature: 0,
+  // ── Fact density — numbers and specific data: 0-20 pts ─────────────────────
+  const factMatches = bodyText.match(/\b\d[\d,.]*([\s%$€£°]|\b)/g) ?? []
+  const uniqueFacts = new Set(factMatches).size
+  if (uniqueFacts >= 15) score += 20
+  else if (uniqueFacts >= 8) score += 14
+  else if (uniqueFacts >= 3) score += 7
+  else {
+    score += 2
+    issues.push({
+      module: 'ai', severity: 'low', code: 'A-01-FD',
+      title: 'Low fact density',
+      description: `Only ${uniqueFacts} distinct numeric facts found.`,
+      recommendation: 'Include specific numbers, statistics, percentages, and data points. Factual density strongly correlates with AI citation likelihood.',
     })
+  }
 
-    const raw = response.choices[0]?.message?.content?.trim() ?? '50,50,50,50'
-    const parts = raw.split(',').map((s) => Math.min(100, Math.max(0, parseInt(s.trim(), 10) || 50)))
-    const [chatgpt = 50, gemini = 50, perplexity = 50, claude = 50] = parts
-    const score = Math.round((chatgpt + gemini + perplexity + claude) / 4)
+  // ── Content structure: headings + lists + tables: 0-20 pts ─────────────────
+  const h2h3Count = $('h2, h3').length
+  const listItems = $('ul li, ol li').length
+  const tableCount = $('table').length
+  const structPts = Math.min(20, h2h3Count * 2 + Math.min(listItems, 10) + tableCount * 4)
+  score += structPts
 
-    if (score < 40) {
+  if (structPts < 5) {
+    issues.push({
+      module: 'ai', severity: 'medium', code: 'A-01-ST',
+      title: 'Poor content structure for AI parsing',
+      description: `Found ${h2h3Count} subheadings, ${listItems} list items, ${tableCount} tables.`,
+      recommendation: 'Use H2/H3 headings, bullet lists, and tables. Structured content is significantly more likely to be cited by AI search engines.',
+    })
+  }
+
+  // ── Readability — average sentence length: 0-15 pts ────────────────────────
+  if (sentences.length > 0) {
+    const avgWords = words.length / sentences.length
+    if (avgWords <= 15) score += 15
+    else if (avgWords <= 20) score += 10
+    else if (avgWords <= 28) score += 5
+    else {
+      score += 1
       issues.push({
-        module: 'ai', severity: 'high', code: 'A-01-LC',
-        title: 'Low AI citation probability',
-        description: `Score: ${score}/100`,
-        recommendation: 'Improve content clarity, add direct answers, and increase factual density.',
-        metadata: { chatgpt, gemini, perplexity, claude },
-      })
-    } else if (score < 60) {
-      issues.push({
-        module: 'ai', severity: 'medium', code: 'A-01-MC',
-        title: 'Moderate AI citation probability',
-        description: `Score: ${score}/100`,
-        recommendation: 'Strengthen the opening paragraph with a direct, authoritative answer.',
-        metadata: { chatgpt, gemini, perplexity, claude },
+        module: 'ai', severity: 'low', code: 'A-01-RL',
+        title: 'Long average sentence length reduces AI comprehension',
+        description: `Average: ${avgWords.toFixed(0)} words per sentence (target: ≤ 20).`,
+        recommendation: 'Break long sentences into shorter, clearer statements. AI systems prefer scannable, concise prose.',
       })
     }
+  } else {
+    score += 7
+  }
 
-    return {
-      passed: score >= 60,
-      score,
-      details: `aiScore:${score} chatgpt:${chatgpt} gemini:${gemini} perplexity:${perplexity} claude:${claude}`,
-      issues,
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return {
-      passed: false, score: 50, details: `error: ${msg}`,
-      issues: [{ module: 'ai', severity: 'info', code: 'A-01-ER', title: 'AI citation check failed', description: msg }],
-    }
+  score = Math.min(100, score)
+  return {
+    passed: score >= 60,
+    score,
+    details: `words:${words.length} facts:${uniqueFacts} structPts:${structPts} directAnswer:${hasDirectAnswer}`,
+    issues,
   }
 }
 
@@ -101,7 +120,6 @@ function checkHeadingHierarchy(
   const h2s = $('h2')
   const h3s = $('h3')
 
-  // Single H1 check
   if (h1s.length === 0) {
     score -= 30
     issues.push({ module: 'ai', severity: 'critical', code: 'A-02-H1M', title: 'Missing H1 tag', recommendation: 'Add exactly one H1 tag that clearly describes the page topic.' })
@@ -110,13 +128,11 @@ function checkHeadingHierarchy(
     issues.push({ module: 'ai', severity: 'medium', code: 'A-02-H1D', title: `Multiple H1 tags (${h1s.length})`, recommendation: 'Use exactly one H1 per page.' })
   }
 
-  // H2/H3 presence
   if (h2s.length === 0) {
     score -= 20
     issues.push({ module: 'ai', severity: 'high', code: 'A-02-H2M', title: 'No H2 headings found', recommendation: 'Add H2 subheadings to structure content into logical sections for AI parsing.' })
   }
 
-  // Heading quality: too short
   let shortHeadings = 0
   $('h2, h3').each((_, el) => {
     const text = $(el).text().trim()
@@ -132,10 +148,9 @@ function checkHeadingHierarchy(
     })
   }
 
-  // Check for heading hierarchy skips (e.g., H1 → H3 without H2)
-  const headings: Array<{ level: number; text: string }> = []
+  const headings: Array<{ level: number }> = []
   $('h1, h2, h3, h4, h5, h6').each((_, el) => {
-    headings.push({ level: parseInt(el.tagName.replace('h', ''), 10), text: $(el).text().trim() })
+    headings.push({ level: parseInt(el.tagName.replace('h', ''), 10) })
   })
 
   for (let i = 1; i < headings.length; i++) {
@@ -159,6 +174,31 @@ function checkHeadingHierarchy(
   }
 }
 
+// ─── A-03: Content-to-HTML Ratio ──────────────────────────────────────────────
+// Low ratio = bloated HTML with little content — AI crawlers deprioritize these.
+
+function checkContentToHtmlRatio(
+  $: ReturnType<typeof import('cheerio').load>
+): CheckResult & { issues: ScanIssue[] } {
+  const htmlLength = $.html().length
+  const textLength = $('body').text().replace(/\s+/g, ' ').trim().length
+  const ratio = htmlLength > 0 ? Math.round((textLength / htmlLength) * 100) : 0
+
+  if (ratio >= 25) return { passed: true, score: 100, details: `ratio:${ratio}%`, issues: [] }
+  if (ratio >= 15) return { passed: true, score: 75, details: `ratio:${ratio}%`, issues: [] }
+
+  return {
+    passed: false, score: Math.max(0, ratio * 2),
+    details: `ratio:${ratio}%`,
+    issues: [{
+      module: 'ai', severity: 'low', code: 'A-03-CR',
+      title: 'Low content-to-HTML ratio',
+      description: `Text is only ${ratio}% of total page size.`,
+      recommendation: 'Reduce excessive HTML boilerplate, scripts in <body>, and inline styles. AI crawlers prefer content-dense pages.',
+    }],
+  }
+}
+
 // ─── A-06: Structured Answer Readiness ───────────────────────────────────────
 
 function checkStructuredAnswerReadiness(
@@ -170,16 +210,17 @@ function checkStructuredAnswerReadiness(
   const lists = $('ul li, ol li').length
   const tables = $('table').length
   const h2Count = $('h2').length
+  const defLists = $('dl dt').length
 
-  if (lists === 0 && tables === 0) {
+  if (lists === 0 && tables === 0 && defLists === 0) {
     score -= 30
     issues.push({
       module: 'ai', severity: 'medium', code: 'A-06-NL',
       title: 'No lists or tables found',
-      description: 'AI systems prefer structured content for generating answers.',
-      recommendation: 'Add bullet lists, numbered steps, or comparison tables to key sections.',
+      description: 'AI systems prefer structured content for generating snippet answers.',
+      recommendation: 'Add bullet lists, numbered steps, comparison tables, or definition lists to key sections.',
     })
-  } else if (lists < 3) {
+  } else if (lists < 3 && tables === 0) {
     score -= 15
     issues.push({
       module: 'ai', severity: 'low', code: 'A-06-FL',
@@ -204,12 +245,7 @@ function checkStructuredAnswerReadiness(
     })
   }
 
-  return {
-    passed: score >= 70,
-    score: Math.max(0, score),
-    details: `lists:${lists} tables:${tables} h2:${h2Count}`,
-    issues,
-  }
+  return { passed: score >= 70, score: Math.max(0, score), details: `lists:${lists} tables:${tables} h2:${h2Count}`, issues }
 }
 
 // ─── Main AI Visibility Scanner ───────────────────────────────────────────────
@@ -221,29 +257,29 @@ export async function runAiVisibilityScan(
   const allIssues: ScanIssue[] = []
   const checks: Record<string, CheckResult> = {}
 
-  const title = $('title').first().text().trim()
-  const bodyText = $('article, main, [role="main"]').first().text() || $('body').text()
-  const contentSample = bodyText.replace(/\s+/g, ' ').trim().slice(0, 2000)
-
+  const intelligenceResult = checkContentIntelligence($)
   const headingResult = checkHeadingHierarchy($)
-  const citationResult = await checkAiCitationProbability(title, contentSample)
+  const ratioResult = checkContentToHtmlRatio($)
   const structuredResult = checkStructuredAnswerReadiness($)
 
-  checks['a01'] = { passed: citationResult.passed, score: citationResult.score, details: citationResult.details }
+  checks['a01'] = { passed: intelligenceResult.passed, score: intelligenceResult.score, details: intelligenceResult.details }
   checks['a02'] = { passed: headingResult.passed, score: headingResult.score, details: headingResult.details }
+  checks['a03'] = { passed: ratioResult.passed, score: ratioResult.score, details: ratioResult.details }
   checks['a06'] = { passed: structuredResult.passed, score: structuredResult.score, details: structuredResult.details }
 
   allIssues.push(
-    ...citationResult.issues,
+    ...intelligenceResult.issues,
     ...headingResult.issues,
+    ...ratioResult.issues,
     ...structuredResult.issues,
   )
 
-  // Weighted: A-01(45%) A-02(30%) A-06(25%)
+  // Weighted: A-01(40%) A-02(30%) A-03(10%) A-06(20%)
   const score = Math.round(
-    checks['a01'].score * 0.45 +
+    checks['a01'].score * 0.40 +
     checks['a02'].score * 0.30 +
-    checks['a06'].score * 0.25
+    checks['a03'].score * 0.10 +
+    checks['a06'].score * 0.20
   )
 
   return { score, issues: allIssues, checks }

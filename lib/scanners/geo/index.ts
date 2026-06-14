@@ -11,54 +11,77 @@ function checkEEAT(
   let score = 100
   const html = $.html()
 
-  // Author byline signals
+  // Author byline signals — check multiple patterns
   const hasAuthor =
     $('[rel="author"]').length > 0 ||
     $('[itemprop="author"]').length > 0 ||
+    $('[class*="author"]').length > 0 ||
+    $('[class*="byline"]').length > 0 ||
+    $('address').length > 0 ||
+    $('[data-author]').length > 0 ||
     html.includes('"author"') ||
-    $('[class*="author"]').length > 0
+    html.includes('"@type":"Person"') ||
+    /by\s+[A-Z][a-z]+\s+[A-Z][a-z]+/m.test(html)
 
   if (!hasAuthor) {
     score -= 20
-    issues.push({ module: 'geo', severity: 'medium', code: 'G-01-AU', title: 'No author byline detected', recommendation: 'Add author information with schema markup or visible byline.' })
+    issues.push({ module: 'geo', severity: 'medium', code: 'G-01-AU', title: 'No author byline detected', recommendation: 'Add author information with schema markup (Person), a visible byline, or <address> element.' })
   }
 
-  // Date signals
+  // Date signals — check multiple patterns including <time> elements
   const hasDate =
     $('[itemprop="datePublished"]').length > 0 ||
     $('[itemprop="dateModified"]').length > 0 ||
     $('meta[property="article:published_time"]').length > 0 ||
+    $('time[datetime]').length > 0 ||
+    $('[class*="date"]').length > 0 ||
+    $('[class*="publish"]').length > 0 ||
     html.includes('"datePublished"') ||
-    html.includes('"dateModified"')
+    html.includes('"dateModified"') ||
+    html.includes('"dateCreated"')
 
   if (!hasDate) {
     score -= 20
-    issues.push({ module: 'geo', severity: 'medium', code: 'G-01-DT', title: 'No publication date detected', recommendation: 'Add datePublished and dateModified to schema markup.' })
+    issues.push({ module: 'geo', severity: 'medium', code: 'G-01-DT', title: 'No publication date detected', recommendation: 'Add datePublished and dateModified to schema markup, or use <time datetime="..."> elements.' })
   }
 
-  // Organization/Person schema
-  const hasOrgSchema = html.includes('"Organization"') || html.includes('"Person"')
+  // Organization/Person schema — check JSON-LD and microdata
+  const hasOrgSchema =
+    html.includes('"Organization"') ||
+    html.includes('"Person"') ||
+    $('[itemtype*="Organization"]').length > 0 ||
+    $('[itemtype*="Person"]').length > 0 ||
+    $('meta[property="og:site_name"]').attr('content') !== undefined
+
   if (!hasOrgSchema) {
     score -= 15
-    issues.push({ module: 'geo', severity: 'low', code: 'G-01-ORG', title: 'No Organization or Person schema', recommendation: 'Add Organization/Person structured data to establish entity identity.' })
+    issues.push({ module: 'geo', severity: 'low', code: 'G-01-ORG', title: 'No Organization or Person schema', recommendation: 'Add Organization/Person structured data to establish entity identity for AI systems.' })
   }
 
-  // About & Contact page links
-  const origin = new URL(baseUrl).origin
-  const allLinks = $('a[href]').map((_, el) => $(el).attr('href') ?? '').get()
-  const hasAbout = allLinks.some((h) => /about/i.test(h))
-  const hasContact = allLinks.some((h) => /contact/i.test(h))
+  // About & Contact — check link text and href patterns
+  const allLinks = $('a[href]').map((_, el) => ({
+    href: $(el).attr('href') ?? '',
+    text: $(el).text().toLowerCase(),
+  })).get()
+
+  const hasAbout = allLinks.some((l) => /about/i.test(l.href) || /about/i.test(l.text))
+  const hasContact = allLinks.some((l) => /contact|kontakt|reach|connect/i.test(l.href) || /contact|reach|connect/i.test(l.text))
+  const hasPrivacy = allLinks.some((l) => /privacy|privac/i.test(l.href) || /privacy/i.test(l.text))
 
   if (!hasAbout) {
     score -= 15
-    issues.push({ module: 'geo', severity: 'low', code: 'G-01-AB', title: 'No About page link found', recommendation: 'Link to an About page to signal credibility.' })
+    issues.push({ module: 'geo', severity: 'low', code: 'G-01-AB', title: 'No About page link found', recommendation: 'Link to an About page to signal credibility to AI systems and users.' })
   }
   if (!hasContact) {
     score -= 10
     issues.push({ module: 'geo', severity: 'low', code: 'G-01-CO', title: 'No Contact page link found', recommendation: 'Link to a Contact page to signal trustworthiness.' })
   }
+  if (!hasPrivacy) {
+    score -= 5
+    issues.push({ module: 'geo', severity: 'info', code: 'G-01-PR', title: 'No Privacy Policy link found', recommendation: 'Add a Privacy Policy link to improve trust signals.' })
+  }
 
-  return { passed: score >= 60, score: Math.max(0, score), details: `author:${hasAuthor} date:${hasDate} org:${hasOrgSchema} about:${hasAbout} contact:${hasContact}`, issues }
+  return { passed: score >= 60, score: Math.max(0, score), details: `author:${hasAuthor} date:${hasDate} org:${hasOrgSchema} about:${hasAbout} contact:${hasContact} privacy:${hasPrivacy}`, issues }
 }
 
 // ─── G-02: AI Citability Score ────────────────────────────────────────────────
