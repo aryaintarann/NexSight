@@ -8,6 +8,7 @@ import { runAiVisibilityScan } from '@/lib/scanners/ai-visibility'
 import { runSecurityScan } from '@/lib/scanners/security'
 import { calculateOverallScore, getGrade } from '@/lib/scoring'
 import { createClient } from '@supabase/supabase-js'
+import { fireWebhooks } from '@/lib/webhooks/send'
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379'
 const connection = { url: redisUrl, maxRetriesPerRequest: null as null }
@@ -22,7 +23,7 @@ interface ScanJobData {
 const worker = new Worker<ScanJobData>(
   'scans',
   async (job) => {
-    const { scanId, url, modules } = job.data
+    const { scanId, url, modules, userId } = job.data
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in .env.local')
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey)
@@ -85,6 +86,13 @@ const worker = new Worker<ScanJobData>(
         completed_at: new Date().toISOString(),
       }).eq('id', scanId)
 
+      await fireWebhooks(userId, 'scan.done', {
+        scan_id: scanId,
+        url,
+        status: 'done',
+        overall_score: overallScore,
+      }).catch((e) => console.warn('[worker] webhook delivery failed:', e))
+
       // Save issues to scan_issues table
       const allIssues = [
         ...seoResult.issues,
@@ -104,6 +112,11 @@ const worker = new Worker<ScanJobData>(
         error_message: msg,
         completed_at: new Date().toISOString(),
       }).eq('id', scanId)
+      await fireWebhooks(userId, 'scan.failed', {
+        scan_id: scanId,
+        url,
+        status: 'failed',
+      }).catch(() => {})
       throw err
     }
   },
