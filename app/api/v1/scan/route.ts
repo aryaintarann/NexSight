@@ -29,7 +29,13 @@ export async function POST(request: NextRequest) {
 
   if (error || !scan) return NextResponse.json({ error: 'Failed to create scan' }, { status: 500 })
 
-  await scanQueue.add('run-scan', { scanId: scan.id, url, modules, userId: auth.userId })
+  try {
+    await scanQueue.add('run-scan', { scanId: scan.id, url, modules, userId: auth.userId })
+  } catch (err) {
+    console.error('[scan] Failed to enqueue scan:', err)
+    await admin().from('scans').update({ status: 'failed', error_message: 'Queue unavailable' }).eq('id', scan.id)
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+  }
 
   return NextResponse.json(
     { scan_id: scan.id, status: 'queued', url, created_at: scan.created_at },

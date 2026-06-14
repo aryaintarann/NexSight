@@ -14,13 +14,14 @@ export async function GET(
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
-  const { data: scan } = await admin()
+  const { data: scan, error: scanError } = await admin()
     .from('scans')
     .select('id, url, status, overall_score, seo_score, geo_score, ai_score, sec_score, scan_duration, error_message, created_at, completed_at')
     .eq('id', id)
     .eq('user_id', auth.userId)
     .single()
 
+  if (scanError && scanError.code !== 'PGRST116') console.error('[scan/get]', scanError.message)
   if (!scan) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
 
   return NextResponse.json({

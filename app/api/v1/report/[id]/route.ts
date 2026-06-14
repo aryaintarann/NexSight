@@ -19,18 +19,23 @@ export async function GET(
   const { id } = await params
   const format = request.nextUrl.searchParams.get('format') ?? 'html'
 
-  const { data: scan } = await admin()
+  if (format !== 'html' && format !== 'pdf') {
+    return NextResponse.json({ error: 'Invalid format. Supported: html, pdf' }, { status: 400 })
+  }
+
+  const { data: scan, error: scanError } = await admin()
     .from('scans')
     .select('*, scan_issues(*)')
     .eq('id', id)
     .eq('user_id', auth.userId)
     .single()
 
+  if (scanError && scanError.code !== 'PGRST116') console.error('[report]', scanError.message)
   if (!scan) return NextResponse.json({ error: 'Scan not found' }, { status: 404 })
   if (scan.status !== 'done') return NextResponse.json({ error: 'Scan not completed yet' }, { status: 400 })
 
   const typedScan = scan as Scan & { scan_issues: ScanIssueRow[] }
-  const hostname = new URL(scan.url).hostname.replace(/\./g, '-')
+  const hostname = new URL(scan.url).hostname.replace(/[^a-zA-Z0-9-]/g, '-')
 
   if (format === 'pdf') {
     const pdfBuffer = await generatePdfReport(typedScan)

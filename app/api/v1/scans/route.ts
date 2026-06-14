@@ -14,12 +14,14 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(100, Math.max(1, Number(request.nextUrl.searchParams.get('limit') ?? '20')))
   const offset = (page - 1) * limit
 
-  const { data: scans, count } = await admin()
+  const { data: scans, count, error: scansError } = await admin()
     .from('scans')
     .select('id, url, status, overall_score, created_at, completed_at', { count: 'exact' })
     .eq('user_id', auth.userId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
+
+  if (scansError) console.error('[scans/list]', scansError.message)
 
   return NextResponse.json({
     scans: scans ?? [],
