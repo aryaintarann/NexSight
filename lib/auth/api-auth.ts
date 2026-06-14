@@ -17,21 +17,26 @@ export async function resolveAuth(request: NextRequest): Promise<AuthResult> {
   const apiKey = request.headers.get('X-API-Key')
   if (apiKey?.startsWith('nxs_')) {
     const keyHash = hashApiKey(apiKey)
-    const { data: keyRow } = await getAdmin()
+    const { data: keyRow, error: keyError } = await getAdmin()
       .from('api_keys')
       .select('user_id, expires_at')
       .eq('key_hash', keyHash)
       .single()
 
+    if (keyError && keyError.code !== 'PGRST116') {
+      console.error('[api-auth] api_keys lookup error:', keyError.message)
+    }
     if (!keyRow) return null
-    if (keyRow.expires_at && new Date(keyRow.expires_at) < new Date()) return null
+    const now = new Date()
+    if (keyRow.expires_at && new Date(keyRow.expires_at) < now) return null
 
     // Fire-and-forget last_used update
-    getAdmin()
-      .from('api_keys')
-      .update({ last_used: new Date().toISOString() })
-      .eq('key_hash', keyHash)
-      .then(() => {})
+    Promise.resolve(
+      getAdmin()
+        .from('api_keys')
+        .update({ last_used: new Date().toISOString() })
+        .eq('key_hash', keyHash)
+    ).catch((e: unknown) => console.error('[api-auth] last_used update failed:', e))
 
     return { userId: keyRow.user_id, source: 'api_key' }
   }
