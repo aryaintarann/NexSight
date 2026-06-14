@@ -1,15 +1,13 @@
 import { notFound } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getGrade, getScoreColor } from '@/lib/scoring'
+import { getScoreColor } from '@/lib/scoring'
 import ScoreGauge from '@/components/dashboard/ScoreGauge'
 import { RealtimeStatus } from '@/components/dashboard/RealtimeStatus'
 import SeverityBadge from '@/components/dashboard/SeverityBadge'
 import DownloadButtons from './DownloadButtons'
+import RadarWrapper from './RadarWrapper'
 import type { Scan, ScanIssueRow } from '@/types'
-
-const ScoreRadar = dynamic(() => import('@/components/dashboard/ScoreRadar'), { ssr: false })
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const
 
@@ -109,7 +107,7 @@ export default async function ResultPage({
               </div>
 
               <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6">
-                <ScoreRadar
+                <RadarWrapper
                   seo={scan.seo_score ?? 0}
                   geo={scan.geo_score ?? 0}
                   ai={scan.ai_score ?? 0}
