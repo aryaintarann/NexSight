@@ -4,6 +4,7 @@ import ScoreGauge from '@/components/dashboard/ScoreGauge'
 import SeverityBadge from '@/components/dashboard/SeverityBadge'
 import ScoreRadar from '@/components/dashboard/ScoreRadar'
 import { getGrade, getGradeLabel } from '@/lib/scoring'
+import { branding } from '@/lib/branding'
 import type { Scan, ScanIssueRow } from '@/types'
 
 function admin() {
@@ -37,7 +38,7 @@ export default async function SharePage({
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <div className="text-cyan-400 text-sm font-semibold mb-1">NexSight Report</div>
+            <div className="text-cyan-400 text-sm font-semibold mb-1">{branding.name} Report</div>
             <h1 className="text-xl font-bold text-white truncate max-w-2xl">{typedScan.url}</h1>
             <p className="text-slate-400 text-sm mt-0.5">
               {typedScan.completed_at
@@ -46,7 +47,7 @@ export default async function SharePage({
             </p>
           </div>
           <a
-            href="/dashboard/new-scan"
+            href={`${branding.appUrl}/dashboard/new-scan`}
             className="text-sm text-cyan-400 hover:text-cyan-300 border border-cyan-900 hover:border-cyan-700 px-4 py-2 rounded-lg transition-colors shrink-0"
           >
             Scan your site →
@@ -59,7 +60,7 @@ export default async function SharePage({
             <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-8 mb-6 flex items-center gap-10">
               <ScoreGauge score={typedScan.overall_score} size="lg" showGrade />
               <div>
-                <div className="text-slate-400 text-sm mb-1">NexSight Score</div>
+                <div className="text-slate-400 text-sm mb-1">{branding.name} Score</div>
                 <div className="text-4xl font-bold text-white mb-1">
                   {typedScan.overall_score}
                   <span className="text-slate-500 text-xl">/100</span>
