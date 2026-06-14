@@ -105,6 +105,7 @@ const spec = {
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
         responses: {
           '200': { description: 'Scan result', content: { 'application/json': { schema: { $ref: '#/components/schemas/Scan' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '404': { description: 'Scan not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
@@ -141,6 +142,7 @@ const spec = {
               },
             },
           },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -155,8 +157,8 @@ const spec = {
         ],
         responses: {
           '200': { description: 'Report file', content: { 'text/html': {}, 'application/pdf': {} } },
-          '400': { description: 'Scan not completed yet' },
-          '404': { description: 'Scan not found' },
+          '400': { description: 'Scan not completed yet', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '404': { description: 'Scan not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
@@ -191,6 +193,7 @@ const spec = {
               },
             },
           },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
       post: {
@@ -213,7 +216,25 @@ const spec = {
           },
         },
         responses: {
-          '201': { description: 'Key created — `key` field only shown in this response' },
+          '201': {
+            description: 'Key created — `key` field only shown in this response',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    name: { type: 'string' },
+                    key_prefix: { type: 'string' },
+                    expires_at: { type: 'string', format: 'date-time', nullable: true },
+                    created_at: { type: 'string', format: 'date-time' },
+                    key: { type: 'string', description: 'Full API key — only shown once, store securely' },
+                    warning: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
           '401': { description: 'Unauthorized' },
         },
       },
@@ -257,6 +278,7 @@ const spec = {
               },
             },
           },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
       post: {
@@ -283,7 +305,25 @@ const spec = {
           },
         },
         responses: {
-          '201': { description: 'Webhook registered — `secret` only shown in this response' },
+          '201': {
+            description: 'Webhook registered — `secret` only shown in this response',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    url: { type: 'string', format: 'uri' },
+                    events: { type: 'array', items: { type: 'string' } },
+                    active: { type: 'boolean' },
+                    created_at: { type: 'string', format: 'date-time' },
+                    secret: { type: 'string', description: 'HMAC secret — only shown once, store securely' },
+                    warning: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
           '401': { description: 'Unauthorized' },
         },
       },
