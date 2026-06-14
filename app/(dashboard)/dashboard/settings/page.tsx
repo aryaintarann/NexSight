@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import ApiKeyManager from '@/components/dashboard/ApiKeyManager'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -12,6 +13,7 @@ export default async function SettingsPage() {
       </div>
 
       <div className="space-y-4">
+        {/* Account */}
         <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6">
           <h2 className="text-white font-semibold mb-4">Account</h2>
           <div className="space-y-3">
@@ -26,20 +28,36 @@ export default async function SettingsPage() {
           </div>
         </div>
 
+        {/* API Keys */}
+        <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6">
+          <div className="mb-5">
+            <h2 className="text-white font-semibold">API Keys</h2>
+            <p className="text-slate-500 text-sm mt-1">
+              Use API keys to access the REST API at{' '}
+              <code className="text-cyan-400 text-xs bg-slate-800 px-1.5 py-0.5 rounded">/api/v1/*</code>
+              {' '}— include as <code className="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">X-API-Key: nxs_...</code> header.
+            </p>
+          </div>
+          <ApiKeyManager />
+        </div>
+
+        {/* Environment */}
         <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6">
           <h2 className="text-white font-semibold mb-2">Environment</h2>
-          <p className="text-slate-400 text-sm mb-4">Configure API keys in your <code className="bg-slate-800 px-1.5 py-0.5 rounded text-xs">.env.local</code> file:</p>
+          <p className="text-slate-400 text-sm mb-4">Configure in your <code className="bg-slate-800 px-1.5 py-0.5 rounded text-xs">.env.local</code> file:</p>
           <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-slate-300 space-y-1.5">
             <div><span className="text-slate-500"># Supabase</span></div>
             <div>NEXT_PUBLIC_SUPABASE_URL=<span className="text-emerald-400">your-project-url</span></div>
             <div>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<span className="text-emerald-400">your-key</span></div>
-            <div className="mt-2"><span className="text-slate-500"># OpenRouter (for AI scanner)</span></div>
+            <div>SUPABASE_SERVICE_ROLE_KEY=<span className="text-emerald-400">your-service-role-key</span></div>
+            <div className="mt-2"><span className="text-slate-500"># AI (OpenRouter)</span></div>
             <div>OPENROUTER_API_KEY=<span className="text-emerald-400">sk-or-xxx</span></div>
-            <div className="mt-2"><span className="text-slate-500"># Redis (for BullMQ job queue)</span></div>
+            <div className="mt-2"><span className="text-slate-500"># Job Queue</span></div>
             <div>REDIS_URL=<span className="text-emerald-400">redis://localhost:6379</span></div>
           </div>
         </div>
 
+        {/* Score formula */}
         <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6">
           <h2 className="text-white font-semibold mb-2">NexSight Score Formula</h2>
           <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-slate-300">
