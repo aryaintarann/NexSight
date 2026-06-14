@@ -5,6 +5,7 @@ import { RealtimeStatus } from '@/components/dashboard/RealtimeStatus'
 import SeverityBadge from '@/components/dashboard/SeverityBadge'
 import ScoreRadar from '@/components/dashboard/ScoreRadar'
 import AiRecommendations from '@/components/dashboard/AiRecommendations'
+import ShareButton from '@/components/dashboard/ShareButton'
 import { getGradeLabel, getGrade } from '@/lib/scoring'
 import type { Scan, ScanIssueRow } from '@/types'
 
@@ -70,6 +71,7 @@ export default async function ScanDetailPage({
                 </svg>
                 PDF
               </a>
+              <ShareButton scanId={id} />
             </div>
           )}
         </div>
