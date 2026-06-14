@@ -251,64 +251,6 @@ async function checkAiCrawlerAccess(baseUrl: string): Promise<CheckResult & { is
   }
 }
 
-// ─── G-06: Semantic Clarity ───────────────────────────────────────────────────
-
-function checkSemanticClarity(
-  $: ReturnType<typeof import('cheerio').load>
-): CheckResult & { issues: ScanIssue[] } {
-  const issues: ScanIssue[] = []
-  let score = 100
-
-  const mainText = ($('article, main, [role="main"]').first().text() || $('body').text())
-    .replace(/\s+/g, ' ').trim()
-  const wordCount = mainText.split(' ').filter(Boolean).length
-
-  if (wordCount < 300) {
-    score -= 30
-    issues.push({
-      module: 'geo', severity: 'high', code: 'G-06-TC',
-      title: `Thin content (${wordCount} words)`,
-      description: `Page has only ${wordCount} words — insufficient for AI to understand topic depth.`,
-      recommendation: 'Expand content to at least 300 words covering the topic comprehensively.',
-    })
-  } else if (wordCount < 600) {
-    score -= 10
-    issues.push({
-      module: 'geo', severity: 'medium', code: 'G-06-SC',
-      title: `Shallow content (${wordCount} words)`,
-      recommendation: 'Consider expanding to 600+ words for better topic coverage.',
-    })
-  }
-
-  const paragraphs = $('p').map((_, el) => $(el).text().trim()).get().filter((t) => t.length > 50)
-  const shortParagraphs = paragraphs.filter((p) => p.split(' ').length < 20).length
-  if (paragraphs.length > 3 && shortParagraphs / paragraphs.length > 0.6) {
-    score -= 15
-    issues.push({
-      module: 'geo', severity: 'low', code: 'G-06-SP',
-      title: 'Many short paragraphs reduce topic depth',
-      recommendation: 'Use longer, more descriptive paragraphs that fully explain each concept.',
-    })
-  }
-
-  const hasDefinitions = /\bis\s+(a|an|the)\b/i.test(mainText.slice(0, 500))
-  if (!hasDefinitions && wordCount > 100) {
-    score -= 15
-    issues.push({
-      module: 'geo', severity: 'low', code: 'G-06-ED',
-      title: 'No definitional statements found',
-      recommendation: 'Include clear definitions ("X is a Y that...") to help AI understand entities.',
-    })
-  }
-
-  return {
-    passed: score >= 70,
-    score: Math.max(0, score),
-    details: `words:${wordCount} paragraphs:${paragraphs.length}`,
-    issues,
-  }
-}
-
 // ─── G-07: OpenGraph Meta Tags ────────────────────────────────────────────────
 
 function checkOpenGraph(
@@ -397,13 +339,12 @@ export async function runGeoScan(
   const allIssues: ScanIssue[] = []
   const checks: Record<string, CheckResult> = {}
 
-  const [eatResult, citabilityResult, faqResult, freshnessResult, crawlerResult, semanticResult, ogResult, llmsResult] = await Promise.all([
+  const [eatResult, citabilityResult, faqResult, freshnessResult, crawlerResult, ogResult, llmsResult] = await Promise.all([
     Promise.resolve(checkEEAT($, url)),
     Promise.resolve(checkAiCitability($)),
     Promise.resolve(checkFaqSchema($)),
     Promise.resolve(checkContentFreshness($, headers as Record<string, string | string[] | undefined>)),
     checkAiCrawlerAccess(url),
-    Promise.resolve(checkSemanticClarity($)),
     Promise.resolve(checkOpenGraph($)),
     checkLlmsTxt(url),
   ])
@@ -413,21 +354,19 @@ export async function runGeoScan(
   checks['g03'] = { passed: faqResult.passed, score: faqResult.score, details: faqResult.details }
   checks['g04'] = { passed: freshnessResult.passed, score: freshnessResult.score, details: freshnessResult.details }
   checks['g05'] = { passed: crawlerResult.passed, score: crawlerResult.score, details: crawlerResult.details }
-  checks['g06'] = { passed: semanticResult.passed, score: semanticResult.score, details: semanticResult.details }
   checks['g07'] = { passed: ogResult.passed, score: ogResult.score, details: ogResult.details }
   checks['g08'] = { passed: llmsResult.passed, score: llmsResult.score, details: llmsResult.details }
 
-  allIssues.push(...eatResult.issues, ...citabilityResult.issues, ...faqResult.issues, ...freshnessResult.issues, ...crawlerResult.issues, ...semanticResult.issues, ...ogResult.issues, ...llmsResult.issues)
+  allIssues.push(...eatResult.issues, ...citabilityResult.issues, ...faqResult.issues, ...freshnessResult.issues, ...crawlerResult.issues, ...ogResult.issues, ...llmsResult.issues)
 
-  // Weighted: G-01(20%) G-02(20%) G-03(10%) G-04(10%) G-05(15%) G-06(10%) G-07(10%) G-08(5%)
+  // Weighted: G-01(22%) G-02(23%) G-03(11%) G-04(11%) G-05(17%) G-07(11%) G-08(5%)
   const score = Math.round(
-    checks['g01'].score * 0.20 +
-    checks['g02'].score * 0.20 +
-    checks['g03'].score * 0.10 +
-    checks['g04'].score * 0.10 +
-    checks['g05'].score * 0.15 +
-    checks['g06'].score * 0.10 +
-    checks['g07'].score * 0.10 +
+    checks['g01'].score * 0.22 +
+    checks['g02'].score * 0.23 +
+    checks['g03'].score * 0.11 +
+    checks['g04'].score * 0.11 +
+    checks['g05'].score * 0.17 +
+    checks['g07'].score * 0.11 +
     checks['g08'].score * 0.05
   )
 

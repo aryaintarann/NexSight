@@ -159,117 +159,6 @@ function checkHeadingHierarchy(
   }
 }
 
-// ─── A-03: Conversational Query Match ────────────────────────────────────────
-
-function checkConversationalMatch(
-  $: ReturnType<typeof import('cheerio').load>
-): CheckResult & { issues: ScanIssue[] } {
-  const issues: ScanIssue[] = []
-  let matchScore = 0
-  let testedSections = 0
-
-  // For each H2 section, check if content answers "what/how" questions
-  $('h2').each((_, heading) => {
-    const headingText = $(heading).text().trim()
-    if (!headingText) return
-    testedSections++
-
-    // Collect text content until next H2
-    let sectionText = ''
-    let next = $(heading).next()
-    while (next.length && !next.is('h2')) {
-      sectionText += ' ' + next.text()
-      next = next.next()
-    }
-    sectionText = sectionText.trim()
-
-    if (!sectionText) return
-
-    // Direct answer patterns: definition, numbered steps, clear explanation
-    const hasDirectAnswer =
-      /is |are |means |refers to |defined as /i.test(sectionText.split(/[.!?]/)[0] ?? '') ||
-      /<ol|<ul|\d+\.\s/.test(sectionText) ||
-      sectionText.length > 200
-
-    if (hasDirectAnswer) matchScore += 100 / Math.max(testedSections, 1)
-  })
-
-  if (testedSections === 0) {
-    issues.push({ module: 'ai', severity: 'medium', code: 'A-03-NS', title: 'No H2-structured sections to evaluate', recommendation: 'Structure content with H2 headings that act as conversational question answers.' })
-    return { passed: false, score: 30, details: 'no sections', issues }
-  }
-
-  const avgScore = Math.min(100, testedSections > 0 ? matchScore : 0)
-
-  if (avgScore < 40) {
-    issues.push({
-      module: 'ai', severity: 'high', code: 'A-03-LM',
-      title: 'Low conversational query match',
-      recommendation: 'Start each H2 section with a direct answer to the implied question.',
-    })
-  }
-
-  return {
-    passed: avgScore >= 50,
-    score: Math.round(avgScore),
-    details: `sections:${testedSections} matchScore:${Math.round(avgScore)}`,
-    issues,
-  }
-}
-
-// ─── A-05: Content Originality ────────────────────────────────────────────────
-
-function checkContentOriginality(
-  $: ReturnType<typeof import('cheerio').load>
-): CheckResult & { issues: ScanIssue[] } {
-  const issues: ScanIssue[] = []
-  let score = 100
-
-  const bodyText = $('body').text().replace(/\s+/g, ' ').trim()
-  const wordCount = bodyText.split(' ').filter(Boolean).length
-
-  const mainText = ($('article, main, .content, #content').text() || '').trim()
-  const mainWordCount = mainText.split(' ').filter(Boolean).length
-  const contentRatio = wordCount > 0 ? mainWordCount / wordCount : 0
-
-  if (wordCount < 100) {
-    score -= 40
-    issues.push({
-      module: 'ai', severity: 'high', code: 'A-05-TH',
-      title: 'Very thin content — likely not indexable by AI',
-      description: `Only ${wordCount} words detected on page.`,
-      recommendation: 'Add substantive content of at least 300 words.',
-    })
-  } else if (contentRatio < 0.3 && wordCount > 200) {
-    score -= 25
-    issues.push({
-      module: 'ai', severity: 'medium', code: 'A-05-BP',
-      title: 'High boilerplate ratio — most text is navigation/footer',
-      recommendation: 'Increase main content area relative to navigation and footer text.',
-    })
-  }
-
-  const sentences = bodyText.split(/[.!?]+/).filter((s) => s.trim().length > 20)
-  const unique = new Set(sentences.map((s) => s.trim().toLowerCase().slice(0, 60)))
-  const duplicationRatio = sentences.length > 0 ? 1 - unique.size / sentences.length : 0
-  if (duplicationRatio > 0.3 && sentences.length > 5) {
-    score -= 20
-    issues.push({
-      module: 'ai', severity: 'medium', code: 'A-05-DP',
-      title: 'High content duplication detected',
-      description: `${Math.round(duplicationRatio * 100)}% of sentences appear duplicated.`,
-      recommendation: 'Remove repeated content blocks and ensure each section adds unique value.',
-    })
-  }
-
-  return {
-    passed: score >= 70,
-    score: Math.max(0, score),
-    details: `words:${wordCount} contentRatio:${contentRatio.toFixed(2)} dupRatio:${duplicationRatio.toFixed(2)}`,
-    issues,
-  }
-}
-
 // ─── A-06: Structured Answer Readiness ───────────────────────────────────────
 
 function checkStructuredAnswerReadiness(
@@ -337,32 +226,24 @@ export async function runAiVisibilityScan(
   const contentSample = bodyText.replace(/\s+/g, ' ').trim().slice(0, 2000)
 
   const headingResult = checkHeadingHierarchy($)
-  const queryResult = checkConversationalMatch($)
   const citationResult = await checkAiCitationProbability(title, contentSample)
-  const originalityResult = checkContentOriginality($)
   const structuredResult = checkStructuredAnswerReadiness($)
 
   checks['a01'] = { passed: citationResult.passed, score: citationResult.score, details: citationResult.details }
   checks['a02'] = { passed: headingResult.passed, score: headingResult.score, details: headingResult.details }
-  checks['a03'] = { passed: queryResult.passed, score: queryResult.score, details: queryResult.details }
-  checks['a05'] = { passed: originalityResult.passed, score: originalityResult.score, details: originalityResult.details }
   checks['a06'] = { passed: structuredResult.passed, score: structuredResult.score, details: structuredResult.details }
 
   allIssues.push(
     ...citationResult.issues,
     ...headingResult.issues,
-    ...queryResult.issues,
-    ...originalityResult.issues,
     ...structuredResult.issues,
   )
 
-  // Weighted: A-01(30%) A-02(20%) A-03(20%) A-05(15%) A-06(15%)
+  // Weighted: A-01(45%) A-02(30%) A-06(25%)
   const score = Math.round(
-    checks['a01'].score * 0.30 +
-    checks['a02'].score * 0.20 +
-    checks['a03'].score * 0.20 +
-    checks['a05'].score * 0.15 +
-    checks['a06'].score * 0.15
+    checks['a01'].score * 0.45 +
+    checks['a02'].score * 0.30 +
+    checks['a06'].score * 0.25
   )
 
   return { score, issues: allIssues, checks }

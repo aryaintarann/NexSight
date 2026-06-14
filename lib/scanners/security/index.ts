@@ -1,6 +1,5 @@
 import axios from 'axios'
 import * as tls from 'tls'
-import dns from 'dns/promises'
 import type { SecurityResult, ScanIssue, CheckResult } from '@/types'
 
 // ─── SC-01: HTTP Security Headers ────────────────────────────────────────────
@@ -281,80 +280,6 @@ function checkOwaspBaseline(headers: Record<string, string | string[] | undefine
   return { passed: score >= 70, score: Math.max(0, score), details: `server:${!!serverHeader} xPoweredBy:${!!xPoweredBy} referrerPolicy:${!!referrerPolicy}`, issues }
 }
 
-// ─── SC-06: DNS Security (SPF / DMARC) ───────────────────────────────────────
-
-async function checkDnsSecurity(url: string): Promise<CheckResult & { issues: ScanIssue[] }> {
-  const issues: ScanIssue[] = []
-  let score = 100
-  const hostname = new URL(url).hostname
-
-  try {
-    const txtRecords = await dns.resolveTxt(hostname).catch(() => [] as string[][])
-    const flat = txtRecords.flat()
-    const hasSpf = flat.some((r) => r.startsWith('v=spf1'))
-
-    if (!hasSpf) {
-      score -= 35
-      issues.push({
-        module: 'security', severity: 'medium', code: 'SC-06-SPF',
-        title: 'Missing SPF record',
-        recommendation: 'Add an SPF TXT record to prevent email spoofing.',
-      })
-    }
-
-    const dmarcRecords = await dns.resolveTxt(`_dmarc.${hostname}`).catch(() => [] as string[][])
-    const hasDmarcRecord = dmarcRecords.flat().some((r) => r.startsWith('v=DMARC1'))
-
-    if (!hasDmarcRecord) {
-      score -= 35
-      issues.push({
-        module: 'security', severity: 'medium', code: 'SC-06-DMARC',
-        title: 'Missing DMARC record',
-        recommendation: 'Add a DMARC policy at _dmarc.yourdomain.com.',
-      })
-    }
-  } catch {
-    score = 50
-    issues.push({
-      module: 'security', severity: 'info', code: 'SC-06-ER',
-      title: 'DNS security check incomplete',
-      description: 'Could not resolve DNS records.',
-    })
-  }
-
-  return { passed: score >= 70, score: Math.max(0, score), details: `dns check for ${hostname}`, issues }
-}
-
-// ─── SC-08: security.txt ─────────────────────────────────────────────────────
-
-async function checkSecurityTxt(url: string): Promise<CheckResult & { issues: ScanIssue[] }> {
-  const origin = new URL(url).origin
-  const candidates = [`${origin}/.well-known/security.txt`, `${origin}/security.txt`]
-
-  for (const candidate of candidates) {
-    try {
-      const res = await axios.get(candidate, {
-        timeout: 8000,
-        validateStatus: () => true,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NexSight/1.0; +https://nexsight.app)' },
-      })
-      if (res.status === 200 && typeof res.data === 'string' && res.data.includes('Contact:')) {
-        return { passed: true, score: 100, details: `security.txt found at ${candidate}`, issues: [] }
-      }
-    } catch { /* not found */ }
-  }
-
-  return {
-    passed: false, score: 70,
-    details: 'security.txt not found',
-    issues: [{
-      module: 'security', severity: 'low', code: 'SC-08-NF',
-      title: 'No security.txt file',
-      recommendation: 'Create /.well-known/security.txt per RFC 9116 with Contact: and Expires: fields.',
-    }],
-  }
-}
-
 // ─── Main Security Scanner ────────────────────────────────────────────────────
 
 export async function runSecurityScan(
@@ -366,10 +291,8 @@ export async function runSecurityScan(
   const allIssues: ScanIssue[] = []
   const checks: Record<string, CheckResult> = {}
 
-  const [sslResult, dnsResult, securityTxtResult] = await Promise.all([
+  const [sslResult] = await Promise.all([
     checkSslTls(url),
-    checkDnsSecurity(url),
-    checkSecurityTxt(url),
   ])
 
   const headerResult = checkSecurityHeaders(headers)
@@ -382,24 +305,19 @@ export async function runSecurityScan(
   checks['sc03'] = { passed: mixedResult.passed, score: mixedResult.score, details: mixedResult.details }
   checks['sc04'] = { passed: cookieResult.passed, score: cookieResult.score, details: cookieResult.details }
   checks['sc05'] = { passed: owaspResult.passed, score: owaspResult.score, details: owaspResult.details }
-  checks['sc06'] = { passed: dnsResult.passed, score: dnsResult.score, details: dnsResult.details }
-  checks['sc08'] = { passed: securityTxtResult.passed, score: securityTxtResult.score, details: securityTxtResult.details }
 
   allIssues.push(
     ...headerResult.issues, ...sslResult.issues, ...mixedResult.issues,
-    ...cookieResult.issues, ...owaspResult.issues, ...dnsResult.issues,
-    ...securityTxtResult.issues
+    ...cookieResult.issues, ...owaspResult.issues
   )
 
-  // Weighted: SC-01(25%) SC-02(22%) SC-03(17%) SC-04(13%) SC-05(8%) SC-06(10%) SC-08(5%)
+  // Weighted: SC-01(30%) SC-02(27%) SC-03(20%) SC-04(15%) SC-05(8%)
   const score = Math.round(
-    checks['sc01'].score * 0.25 +
-    checks['sc02'].score * 0.22 +
-    checks['sc03'].score * 0.17 +
-    checks['sc04'].score * 0.13 +
-    checks['sc05'].score * 0.08 +
-    checks['sc06'].score * 0.10 +
-    checks['sc08'].score * 0.05
+    checks['sc01'].score * 0.30 +
+    checks['sc02'].score * 0.27 +
+    checks['sc03'].score * 0.20 +
+    checks['sc04'].score * 0.15 +
+    checks['sc05'].score * 0.08
   )
 
   return { score, issues: allIssues, checks }
