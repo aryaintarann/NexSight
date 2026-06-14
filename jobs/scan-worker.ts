@@ -86,13 +86,6 @@ const worker = new Worker<ScanJobData>(
         completed_at: new Date().toISOString(),
       }).eq('id', scanId)
 
-      await fireWebhooks(userId, 'scan.done', {
-        scan_id: scanId,
-        url,
-        status: 'done',
-        overall_score: overallScore,
-      }).catch((e) => console.warn('[worker] webhook delivery failed:', e))
-
       // Save issues to scan_issues table
       const allIssues = [
         ...seoResult.issues,
@@ -104,6 +97,13 @@ const worker = new Worker<ScanJobData>(
       if (allIssues.length > 0) {
         await supabase.from('scan_issues').insert(allIssues)
       }
+
+      await fireWebhooks(userId, 'scan.done', {
+        scan_id: scanId,
+        url,
+        status: 'done',
+        overall_score: overallScore,
+      }).catch((e) => console.warn('[worker] webhook delivery failed:', e))
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

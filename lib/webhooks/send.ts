@@ -11,13 +11,17 @@ export async function fireWebhooks(
   event: 'scan.done' | 'scan.failed',
   payload: { scan_id: string; url: string; status: string; overall_score?: number | null }
 ): Promise<void> {
-  const { data: hooks } = await admin()
+  const { data: hooks, error: hooksError } = await admin()
     .from('webhooks')
     .select('url, secret')
     .eq('user_id', userId)
     .eq('active', true)
     .contains('events', [event])
 
+  if (hooksError) {
+    console.error('[webhooks/send] DB error fetching hooks:', hooksError.message)
+    return
+  }
   if (!hooks || hooks.length === 0) return
 
   const body = JSON.stringify({

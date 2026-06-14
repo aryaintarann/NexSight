@@ -15,13 +15,14 @@ export async function DELETE(
 
   const { id } = await params
 
-  const { error } = await admin()
+  const { error, count } = await admin()
     .from('webhooks')
-    .delete()
+    .delete({ count: 'exact' })
     .eq('id', id)
     .eq('user_id', auth.userId)
 
   if (error) return NextResponse.json({ error: 'Failed to delete webhook' }, { status: 500 })
+  if (count === 0) return NextResponse.json({ error: 'Webhook not found' }, { status: 404 })
 
   return new NextResponse(null, { status: 204 })
 }

@@ -28,6 +28,10 @@ export async function POST(request: NextRequest) {
     ? events.filter((e) => VALID_EVENTS.includes(e))
     : VALID_EVENTS
 
+  if (selectedEvents.length === 0) {
+    return NextResponse.json({ error: `events must include at least one of: ${VALID_EVENTS.join(', ')}` }, { status: 400 })
+  }
+
   const { data: hook, error } = await admin()
     .from('webhooks')
     .insert({ user_id: auth.userId, url, secret, events: selectedEvents })
