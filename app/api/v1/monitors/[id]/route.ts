@@ -39,6 +39,7 @@ export async function PATCH(
     if (!active) {
       await monitorQueue.removeRepeatable(jobName, { pattern: monitor.schedule })
     } else {
+      await monitorQueue.removeRepeatable(jobName, { pattern: monitor.schedule }).catch(() => {})
       await monitorQueue.add(
         jobName,
         { monitorId: id, userId: auth.userId, url: monitor.url, modules: ['seo', 'geo', 'ai', 'security'] },
@@ -61,13 +62,17 @@ export async function DELETE(
 
   const { id } = await params
 
-  const { data: monitor } = await admin()
+  const { data: monitor, error: fetchError } = await admin()
     .from('monitors')
     .select('schedule')
     .eq('id', id)
     .eq('user_id', auth.userId)
     .single()
 
+  if (fetchError && fetchError.code !== 'PGRST116') {
+    console.error('[monitors/delete] DB fetch error:', fetchError.message)
+    return NextResponse.json({ error: 'Failed to fetch monitor' }, { status: 500 })
+  }
   if (!monitor) return NextResponse.json({ error: 'Monitor not found' }, { status: 404 })
 
   const { error } = await admin()

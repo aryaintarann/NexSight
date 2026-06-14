@@ -56,13 +56,21 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const jobName = `monitor-${monitor.id}`
+    await monitorQueue.removeRepeatable(jobName, { pattern: schedule }).catch(() => {})
     await monitorQueue.add(
-      `monitor-${monitor.id}`,
+      jobName,
       { monitorId: monitor.id, userId: auth.userId, url, modules: ['seo', 'geo', 'ai', 'security'] },
       { repeat: { pattern: schedule } }
     )
   } catch (queueErr) {
     console.error('[monitors/post] Failed to schedule BullMQ job:', queueErr)
+    await admin()
+      .from('monitors')
+      .update({ active: false })
+      .eq('id', monitor.id)
+      .then(undefined, () => {})
+    return NextResponse.json({ error: 'Monitor created but scheduling failed — please retry' }, { status: 503 })
   }
 
   return NextResponse.json(monitor, { status: 201 })
