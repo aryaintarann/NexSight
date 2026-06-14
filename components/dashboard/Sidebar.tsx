@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: GridIcon },
   { href: '/dashboard/new-scan', label: 'New Scan', icon: ScanIcon },
   { href: '/dashboard/history', label: 'History', icon: HistoryIcon },
+  { href: '/dashboard/monitors', label: 'Monitors', icon: MonitorIcon },
   { href: '/dashboard/settings', label: 'Settings', icon: SettingsIcon },
 ]
 
@@ -29,6 +30,13 @@ function HistoryIcon() {
   return (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+function MonitorIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
     </svg>
   )
 }
@@ -60,8 +68,12 @@ export default function Sidebar({ userEmail }: { userEmail: string }) {
             <span className="text-slate-900 font-bold text-sm">N</span>
           </div>
           <div>
-            <div className="text-white font-semibold text-sm leading-tight">NexSight</div>
-            <div className="text-slate-500 text-xs">Intelligence Platform</div>
+            <div className="text-white font-semibold text-sm leading-tight">
+              {process.env.NEXT_PUBLIC_BRAND_NAME ?? 'NexSight'}
+            </div>
+            <div className="text-slate-500 text-xs">
+              {process.env.NEXT_PUBLIC_BRAND_TAGLINE ?? 'Intelligence Platform'}
+            </div>
           </div>
         </Link>
       </div>
