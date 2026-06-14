@@ -4,7 +4,7 @@ export function generateApiKey(): { fullKey: string; keyHash: string; keyPrefix:
   const random = crypto.randomBytes(32).toString('hex')
   const fullKey = `nxs_${random}`
   const keyHash = crypto.createHash('sha256').update(fullKey).digest('hex')
-  const keyPrefix = fullKey.slice(0, 12)  // "nxs_" + 8 hex chars
+  const keyPrefix = fullKey.slice(0, 12)
   return { fullKey, keyHash, keyPrefix }
 }
 
