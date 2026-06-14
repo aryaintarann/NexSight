@@ -28,6 +28,17 @@ export default async function ScanDetailPage({
   const typedScan = scan as Scan & { scan_issues: ScanIssueRow[] }
   const issues = typedScan.scan_issues ?? []
 
+  const { data: prevScan } = await supabase
+    .from('scans')
+    .select('id, completed_at')
+    .eq('user_id', typedScan.user_id)
+    .eq('url', typedScan.url)
+    .eq('status', 'done')
+    .neq('id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   const modules = [
     { key: 'seo',      label: 'SEO',           score: typedScan.seo_score,  color: '#22d3ee' },
     { key: 'geo',      label: 'GEO',           score: typedScan.geo_score,  color: '#a78bfa' },
@@ -72,6 +83,17 @@ export default async function ScanDetailPage({
                 PDF
               </a>
               <ShareButton scanId={id} />
+              {prevScan && (
+                <a
+                  href={`/dashboard/compare?a=${prevScan.id}&b=${id}`}
+                  className="flex items-center gap-2 text-sm text-slate-400 hover:text-white border border-slate-700 hover:border-slate-600 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Compare
+                </a>
+              )}
             </div>
           )}
         </div>
