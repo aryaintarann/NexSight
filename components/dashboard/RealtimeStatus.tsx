@@ -12,50 +12,35 @@ interface Props {
 }
 
 const TERMINAL_STATUSES = new Set(['done', 'failed'])
-const POLL_INTERVAL = 3000
+const POLL_INTERVAL = 2000
 
 export function RealtimeStatus({ scanId, initialScan, onUpdate }: Props) {
   const [scan, setScan] = useState<Scan>(initialScan)
   const router = useRouter()
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  function handleUpdate(updated: Scan) {
-    setScan(updated)
-    onUpdate?.(updated)
-    if (TERMINAL_STATUSES.has(updated.status)) {
-      if (pollRef.current) clearInterval(pollRef.current)
-      router.refresh()
-    }
-  }
-
   useEffect(() => {
     if (TERMINAL_STATUSES.has(initialScan.status)) return
 
-    // Fresh client per effect so React StrictMode double-invoke doesn't
-    // try to add postgres_changes to an already-subscribed channel.
     const supabase = createClient()
 
-    const channel = supabase
-      .channel(`scan-${scanId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'scans', filter: `id=eq.${scanId}` },
-        (payload) => handleUpdate(payload.new as Scan)
-      )
-      .subscribe()
-
-    // Polling fallback — fires if Realtime is not enabled on the table
     pollRef.current = setInterval(async () => {
       const { data } = await supabase
         .from('scans')
         .select('*')
         .eq('id', scanId)
         .single()
-      if (data) handleUpdate(data as Scan)
+      if (!data) return
+      const updated = data as Scan
+      setScan(updated)
+      onUpdate?.(updated)
+      if (TERMINAL_STATUSES.has(updated.status)) {
+        if (pollRef.current) clearInterval(pollRef.current)
+        router.refresh()
+      }
     }, POLL_INTERVAL)
 
     return () => {
-      supabase.removeChannel(channel)
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [scanId]) // eslint-disable-line react-hooks/exhaustive-deps
