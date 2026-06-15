@@ -16,7 +16,6 @@ const POLL_INTERVAL = 3000
 
 export function RealtimeStatus({ scanId, initialScan, onUpdate }: Props) {
   const [scan, setScan] = useState<Scan>(initialScan)
-  const supabase = createClient()
   const router = useRouter()
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -32,7 +31,10 @@ export function RealtimeStatus({ scanId, initialScan, onUpdate }: Props) {
   useEffect(() => {
     if (TERMINAL_STATUSES.has(initialScan.status)) return
 
-    // Realtime subscription
+    // Fresh client per effect so React StrictMode double-invoke doesn't
+    // try to add postgres_changes to an already-subscribed channel.
+    const supabase = createClient()
+
     const channel = supabase
       .channel(`scan-${scanId}`)
       .on(
