@@ -21,6 +21,14 @@ const MODULE_MAP: Record<string, string> = {
   seo: 'SEO', geo: 'GEO', ai: 'AI', security: 'Security',
 }
 
+const PAGE_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  public_content: { label: 'Public Page',     color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20' },
+  admin_backend:  { label: 'Admin / Backend', color: 'text-orange-400',  bg: 'bg-orange-400/10 border-orange-400/20' },
+  auth_page:      { label: 'Auth Page',        color: 'text-yellow-400',  bg: 'bg-yellow-400/10 border-yellow-400/20' },
+  api_endpoint:   { label: 'API Endpoint',     color: 'text-blue-400',    bg: 'bg-blue-400/10 border-blue-400/20' },
+  utility:        { label: 'Utility',          color: 'text-slate-400',   bg: 'bg-slate-400/10 border-slate-400/20' },
+}
+
 function ScoreBar({ score }: { score: number }) {
   const color = getScoreColor(score)
   return (
@@ -98,7 +106,39 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
           <p className="text-xs text-slate-600 uppercase tracking-widest mb-1">Scan result</p>
           <h1 className="text-2xl font-semibold text-white truncate">{hostname}</h1>
           <p className="text-sm text-slate-600 mt-0.5 truncate">{scan.url}</p>
+
+          {/* Page type badge */}
+          {(() => {
+            const pt = (scan.result as { page_type?: string } | null)?.page_type
+            const cfg = pt ? PAGE_TYPE_CONFIG[pt] : null
+            if (!cfg) return null
+            return (
+              <span className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full text-xs font-medium border ${cfg.bg} ${cfg.color}`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+                {cfg.label}
+              </span>
+            )
+          })()}
         </div>
+
+        {/* ── Skipped modules notice ───────────────────────── */}
+        {(() => {
+          const skipped = (scan.result as { skipped_modules?: string[] } | null)?.skipped_modules ?? []
+          const reason  = (scan.result as { page_type_reason?: string } | null)?.page_type_reason
+          if (skipped.length === 0) return null
+          return (
+            <div className="rounded-xl border border-yellow-400/15 bg-yellow-400/5 px-5 py-3.5 flex items-start gap-3">
+              <span className="text-yellow-400 mt-0.5 shrink-0">⚠</span>
+              <div className="text-sm text-slate-400 leading-relaxed">
+                <span className="text-yellow-300 font-medium">Some checks were skipped. </span>
+                {reason && <span>{reason}. </span>}
+                <span className="text-slate-500">
+                  {skipped.map((m) => MODULE_MAP[m] ?? m.toUpperCase()).join(', ')} checks are not relevant for this page type and were excluded from the score.
+                </span>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── FAILED ──────────────────────────────────────── */}
         {scan.status === 'failed' && (

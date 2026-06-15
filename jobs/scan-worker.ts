@@ -5,6 +5,7 @@ import { runGeoScan } from '@/lib/scanners/geo'
 import { runAiVisibilityScan } from '@/lib/scanners/ai-visibility'
 import { runSecurityScan } from '@/lib/scanners/security'
 import { calculateOverallScore, getGrade } from '@/lib/scoring'
+import { classifyPage } from '@/lib/classifier/page-type'
 import { createClient } from '@supabase/supabase-js'
 
 const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379'
@@ -33,22 +34,31 @@ const worker = new Worker<ScanJobData>(
       const { $, headers, cookies } = crawlResult
       const typedHeaders = headers as Record<string, string | string[] | undefined>
 
+      // Classify the page to skip irrelevant modules (e.g. /admin → skip GEO/AI)
+      const classification = classifyPage(url, $, typedHeaders)
+      const activeModules = modules.filter((m) => !classification.skippedModules.includes(m))
+
       const [seoResult, geoResult, aiResult, securityResult] = await Promise.all([
-        modules.includes('seo')
+        activeModules.includes('seo')
           ? runSeoScan(url, $, typedHeaders, cookies)
           : Promise.resolve({ score: 0, issues: [], checks: {} }),
-        modules.includes('geo')
+        activeModules.includes('geo')
           ? runGeoScan(url, $, typedHeaders)
           : Promise.resolve({ score: 0, issues: [], checks: {} }),
-        modules.includes('ai')
+        activeModules.includes('ai')
           ? runAiVisibilityScan(url, $)
           : Promise.resolve({ score: 0, issues: [], checks: {} }),
-        modules.includes('security')
+        activeModules.includes('security')
           ? runSecurityScan(url, $, typedHeaders, cookies)
           : Promise.resolve({ score: 0, issues: [], checks: {} }),
       ])
 
-      const overallScore = calculateOverallScore(seoResult.score, geoResult.score, aiResult.score, securityResult.score)
+      const overallScore = calculateOverallScore(
+        activeModules.includes('seo') ? seoResult.score : null,
+        activeModules.includes('geo') ? geoResult.score : null,
+        activeModules.includes('ai') ? aiResult.score : null,
+        activeModules.includes('security') ? securityResult.score : null,
+      )
       const grade = getGrade(overallScore)
       const scanDuration = Date.now() - startTime
 
@@ -61,6 +71,9 @@ const worker = new Worker<ScanJobData>(
         overall_score: overallScore,
         grade,
         scan_duration_ms: scanDuration,
+        page_type: classification.type,
+        page_type_reason: classification.reason,
+        skipped_modules: classification.skippedModules,
       }
 
       await supabase.from('scans').update({

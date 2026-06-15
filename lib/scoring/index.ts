@@ -1,8 +1,29 @@
 import type { ScanResult } from '@/types'
 
-// NexSight Score = (SEO × 0.30) + (GEO × 0.25) + (AI × 0.20) + (Security × 0.25)
-export function calculateOverallScore(seo: number, geo: number, ai: number, security: number): number {
-  return Math.round(seo * 0.30 + geo * 0.25 + ai * 0.20 + security * 0.25)
+// Weights per module. Null = module was skipped (page type filter).
+// Active module weights are renormalized to sum to 1.0 so skipped modules
+// don't drag the overall score down.
+const MODULE_WEIGHTS = { seo: 0.30, geo: 0.25, ai: 0.20, security: 0.25 } as const
+
+export function calculateOverallScore(
+  seo: number | null,
+  geo: number | null,
+  ai: number | null,
+  security: number | null,
+): number {
+  const raw = [
+    { score: seo,      weight: MODULE_WEIGHTS.seo },
+    { score: geo,      weight: MODULE_WEIGHTS.geo },
+    { score: ai,       weight: MODULE_WEIGHTS.ai },
+    { score: security, weight: MODULE_WEIGHTS.security },
+  ]
+  const entries = raw.filter((e) => e.score !== null) as { score: number; weight: number }[]
+
+  if (entries.length === 0) return 0
+
+  const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0)
+  const weighted = entries.reduce((sum, e) => sum + e.score * (e.weight / totalWeight), 0)
+  return Math.round(weighted)
 }
 
 export function getGrade(score: number): string {

@@ -35,6 +35,9 @@ export interface ScanResult {
   overall_score: number
   grade: string
   scan_duration_ms: number
+  page_type?: string
+  page_type_reason?: string
+  skipped_modules?: string[]
 }
 
 export interface Scan {
