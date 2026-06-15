@@ -180,6 +180,9 @@ function checkMixedContent(
 
 // ─── SC-04: Cookie Security Flags ─────────────────────────────────────────────
 
+// Preference/functional cookies intentionally readable by JS — HttpOnly not required
+const PREFERENCE_COOKIE = /^(next_locale|locale|lang|language|theme|color.?scheme|dark.?mode|i18n|currency|timezone|tz|font.?size|a11y|gdpr|cookie.?consent|cc_|cky_|cookieyes)/i
+
 function checkCookieSecurity(cookies: string[]): CheckResult & { issues: ScanIssue[] } {
   const issues: ScanIssue[] = []
 
@@ -193,9 +196,11 @@ function checkCookieSecurity(cookies: string[]): CheckResult & { issues: ScanIss
   for (const cookie of cookies) {
     const lower = cookie.toLowerCase()
     const cookieName = cookie.split('=')[0].trim()
+    const isPreference = PREFERENCE_COOKIE.test(cookieName)
     const problems: string[] = []
 
-    if (!lower.includes('httponly')) problems.push('HttpOnly')
+    // Preference cookies need JS access — HttpOnly would break them, skip that check
+    if (!isPreference && !lower.includes('httponly')) problems.push('HttpOnly')
     if (!lower.includes('secure')) problems.push('Secure')
     if (!lower.includes('samesite')) problems.push('SameSite')
 
@@ -206,7 +211,7 @@ function checkCookieSecurity(cookies: string[]): CheckResult & { issues: ScanIss
         module: 'security', severity: problems.length >= 2 ? 'high' : 'medium',
         code: 'SC-04-CK',
         title: `Cookie missing flags: ${problems.join(', ')}`,
-        description: `Cookie: ${cookieName}`,
+        description: `Cookie: ${cookieName}${isPreference ? ' (preference cookie — HttpOnly not required)' : ''}`,
         recommendation: `Set ${problems.join(', ')} flags on cookie "${cookieName}".`,
         affected_url: cookieName,
       })
