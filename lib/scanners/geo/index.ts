@@ -244,6 +244,9 @@ async function checkAiCrawlerAccess(baseUrl: string): Promise<CheckResult & { is
       return { passed: false, score: 50, details: 'robots.txt unavailable', issues: [{ module: 'geo', severity: 'info', code: 'G-05-NA', title: 'Cannot check AI crawler access (robots.txt unavailable)' }] }
     }
 
+    // Paths that are legitimately private — blocking these is correct, not an issue
+    const SAFE_BLOCK = /^\/(admin|wp-admin|administrator|backend|panel|cpanel|phpmyadmin|login|signin|signup|register|logout|auth|api|private|internal|cgi-bin|tmp|temp|cache|backup|\.git|\.env)/i
+
     let blocked = 0
     const lines = robotsTxt.split('\n')
     let currentAgent = ''
@@ -252,18 +255,25 @@ async function checkAiCrawlerAccess(baseUrl: string): Promise<CheckResult & { is
       const trimmed = line.trim()
       if (/^user-agent:/i.test(trimmed)) {
         currentAgent = trimmed.replace(/^user-agent:\s*/i, '').toLowerCase()
-      } else if (/^disallow:/i.test(trimmed) && trimmed.replace(/^disallow:\s*/i, '').trim() !== '') {
-        const isBlocked = currentAgent === '*' || AI_BOTS.some((b) => currentAgent.includes(b.name.toLowerCase()))
-        if (isBlocked) {
-          const botName = currentAgent === '*' ? 'all bots (including AI crawlers)' : currentAgent
-          blocked++
-          issues.push({
-            module: 'geo', severity: 'high', code: 'G-05-BL',
-            title: `AI crawler blocked: ${botName}`,
-            description: `Disallow: ${trimmed.replace(/^disallow:\s*/i, '')}`,
-            recommendation: `Consider allowing ${botName} to access your content for AI search visibility.`,
-          })
-        }
+      } else if (/^disallow:/i.test(trimmed)) {
+        const path = trimmed.replace(/^disallow:\s*/i, '').trim()
+        if (!path) continue // empty Disallow = allow all, fine
+
+        const isAiAgent = currentAgent === '*' || AI_BOTS.some((b) => currentAgent.includes(b.name.toLowerCase()))
+        if (!isAiAgent) continue
+
+        // Skip paths that are legitimately private
+        if (SAFE_BLOCK.test(path)) continue
+
+        // Only flag when blocking root or actual public content paths
+        const severity = path === '/' ? 'critical' : 'high'
+        blocked++
+        issues.push({
+          module: 'geo', severity, code: 'G-05-BL',
+          title: `AI crawler blocked from public content: ${path}`,
+          description: `robots.txt: User-agent: ${currentAgent} / Disallow: ${path}`,
+          recommendation: `Remove or narrow the Disallow rule for "${path}" to allow AI crawlers (GPTBot, ClaudeBot) to index your public content.`,
+        })
       }
     }
 
